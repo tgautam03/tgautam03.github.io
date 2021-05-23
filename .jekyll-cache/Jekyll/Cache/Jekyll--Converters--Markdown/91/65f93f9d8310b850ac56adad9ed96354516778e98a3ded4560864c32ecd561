@@ -1,0 +1,247 @@
+I"1<h1 id="topics-covered">Topics Covered</h1>
+<p>1) The Motivation behind creating a Deep Learning Library.
+2) The Basics of Deep Learning.
+3) A Broad structure of the library that I’ll build.</p>
+
+<h1 id="why-am-i-building-a-deep-learning-framework">Why am I building a Deep Learning Framework?</h1>
+<blockquote>
+  <p>In a world with great frameworks like PyTorch, TensorFlow, etc, is it even necessary to know how to build a framework?</p>
+</blockquote>
+
+<p>The short answer to this is, <strong>ABSOLUTELY NOT!!!</strong>. You can do amazing work without knowing how to code a Deep Learning library, but I feel that it’s important to know the low-level stuff, because it’ll flatten the learning curve when you start with a framework of your choice. If you have an idea of how a Deep Learning Framework is written, everything will seem intuitive and you’ll pick up the syntax/concepts very easily.</p>
+
+<blockquote>
+  <p>With <em>whys</em> regarding the iota (yes, I’m calling my framework iota) out of the way, let’s dive into <em>how</em> I’m going to do this and <em>what</em> is required for this project.</p>
+</blockquote>
+
+<p>To build <em>iota</em>, I’ll be using no third-party libraries except <a href="https://numpy.org/">Numpy</a> (for speed and basic matrix operations) and <a href="https://matplotlib.org/">Matplotlib</a> (for plotting). For testing the code, I’ll use <a href="https://pytorch.org/">PyTorch</a>, but it’ll not be used during development in any way other than checking the correctness of the algorithms.</p>
+
+<p>I’ll post a series of blog posts that will take you through this journey and I hope you’ll learn something out of this. You can also follow the project on my GitHub account <a href="https://github.com/tgautam03/iota">here</a> and stay updated.</p>
+
+<blockquote>
+  <p>Note: In this series, I’ll not be going deep into the mathematics (as there are several excellent resources exactly for this), instead this is for someone like me who’s more comfortable with the Maths side of things but always wondered how it gets translated into efficient code.</p>
+</blockquote>
+
+<h1 id="overview-of-deep-learning">Overview of <em>Deep Learning</em></h1>
+<p>In this section, I’ll put forth the <strong>big picture</strong> and layout of how Deep Learning works under the hood. I’ll use this as the basis to design the library.</p>
+
+<h2 id="picture">Picture</h2>
+<p>Let’s consider a simple two-layered Deep Neural Network shown below, where * grey circles* represent neurons.</p>
+
+<p><img src=":/e415163472de4c57a3f9bcf80fddf3d1" alt="00.png" /></p>
+
+<p>Notice that there are two types of <em>arrows</em> in the figure (green &amp; red), and each represent a different operation:</p>
+<ul>
+  <li><em>Green Arrows</em>: Information from all neurons are getting mixed. This is a matrix dot product (as the whole) in the case of Neural Network.</li>
+  <li><em>Red Arrows</em>: No mixing of information between neurons. This is an elementwise operation on each neuron and is known as <em>activation</em> in the case of Neural Network.</li>
+</ul>
+
+<h2 id="maths">Maths</h2>
+<p>We can easily translate this picture into equations. Let’s consider the three neurons in the <em>Input Layer</em> as \(x_1, x_2, x_3\). We can represent these three values in a \(1 \times 3\) matrix \(X\) given as:</p>
+
+\[X = 
+\begin{pmatrix}
+x_1 &amp; x_2 &amp; x_3
+\end{pmatrix}\]
+
+<p>The next step is to represent the <em>black arrows</em> operation, which is the post multiplication of matrix \(X\) by a matrix \(W_1\) given as:</p>
+
+\[W_1 = 
+\begin{pmatrix}
+w_{11}^1 &amp; w_{12}^1 &amp; w_{13}^1 &amp; w_{14}^1 \\
+w_{21}^1 &amp; w_{22}^1 &amp; w_{23}^1 &amp; w_{24}^1 \\
+w_{31}^1 &amp; w_{32}^1 &amp; w_{33}^1 &amp; w_{34}^1 \\
+
+\end{pmatrix}\]
+
+<p>The output of this matrix multiplication is said to be \(Z_1\):</p>
+
+\[Z_1 = 
+\begin{pmatrix}
+x_1 &amp; x_2 &amp; x_3
+\end{pmatrix}
+\begin{pmatrix}
+w_{11}^1 &amp; w_{12}^1 &amp; w_{13}^1 &amp; w_{14}^1 \\
+w_{21}^1 &amp; w_{22}^1 &amp; w_{23}^1 &amp; w_{24}^1 \\
+w_{31}^1 &amp; w_{32}^1 &amp; w_{33}^1 &amp; w_{34}^1 \\
+\end{pmatrix}\]
+
+\[Z_1 =
+\begin{pmatrix}
+\sum_{i=1}^{i=3} x_iw_{i1}^1 &amp; \sum_{i=1}^{i=3} x_iw_{i2}^1 &amp; \sum_{i=1}^{i=3} x_iw_{i3}^1 &amp; \sum_{i=1}^{i=3} x_iw_{i4}^1
+\end{pmatrix}\]
+
+\[Z_1 =
+\begin{pmatrix}
+z_1^1 &amp; z_2^1 &amp; z_3^1 &amp; z_4^1
+\end{pmatrix}; z^1 \ \textrm{and} \ w_{ij}^1 \ \textrm{is not power by 1, but simple notation}\]
+
+<p>After this, we see the <em>red arrows</em>, which represent elementwise operation on \(Z_1\) and the output from this is written as \(A_1\):</p>
+
+\[A_1 = f()
+\begin{pmatrix}
+z_1^1 &amp; z_2^1 &amp; z_3^1 &amp; z_4^1
+\end{pmatrix}; 
+\\ \textrm{where} \ f()\ \textrm{is any function that acts on elements of the matrix}\ Z_1\]
+
+\[A_1 =
+\begin{pmatrix}
+f(z_1^1) &amp; f(z_2^1) &amp; f(z_3^1) &amp; f(z_4^1)
+\end{pmatrix}
+=
+\begin{pmatrix}
+a_1 &amp; a_2 &amp; a_3 &amp; a_4
+\end{pmatrix}\]
+
+<p>The final operation is again the matrix multiplication by \(W_2\) and the output is given as \(Z_2\):</p>
+
+\[Z_2 = 
+\begin{pmatrix}
+a_1 &amp; a_2 &amp; a_3 &amp; a_4
+\end{pmatrix}
+\begin{pmatrix}
+w_{11}^2 &amp; w_{12}^2 \\
+w_{21}^2 &amp; w_{22}^2 \\
+w_{31}^2 &amp; w_{32}^2 \\
+w_{41}^2 &amp; w_{42}^2
+\end{pmatrix}\]
+
+\[Z_2 =
+\begin{pmatrix}
+z_1^2 &amp; z_2^2 &amp; z_3^2 &amp; z_4^2
+\end{pmatrix}; z^2 \ \textrm{and} \ w_{ij}^2 \ \textrm{is not squared, but simple notation}\]
+
+<blockquote>
+  <p>Note: I’ve ignored the bias term.</p>
+</blockquote>
+
+<p>The <strong>learning</strong> part in Deep Learning means that we <strong>learn</strong> the matrices \(W_1 \ \textrm{and} \ W_2\) via an algorithm called gradient descent, which can be summarised in three steps:</p>
+<ul>
+  <li>Start with random \(W_1\) and \(W_2\).</li>
+  <li>Compare \(Z_2\) with ground truth data</li>
+  <li>Adjust \(W_1\) and \(W_2\) such that \(Z_2\) is closest to ground-truth label.</li>
+</ul>
+
+<blockquote>
+  <p>Note: I’ll explain the <em>learning process</em> in detail in the very next section.</p>
+</blockquote>
+
+<h2 id="putting-everything-together">Putting everything together</h2>
+
+<p><img src=":/06c205fa3bc842c68a28f2182c46fb62" alt="01.png" /></p>
+
+<p>In the diagram above, we can see how with the help of different <em>operations</em> (marked in the green box), the neurons interact with each other.</p>
+
+<p>The whole process of <em>training</em> a Neural Network (i.e. learning \(W_1\) and \(W_2\)) is subdivided into four steps:</p>
+
+<ul>
+  <li>Forward Pass</li>
+  <li>Computing the loss</li>
+  <li>Backward Pass</li>
+  <li>Updating Parameters</li>
+</ul>
+
+<h3 id="forward-pass">Forward Pass</h3>
+<p>This can be summarized in just three equations:</p>
+
+\[Z_1 = X \cdot W_1\]
+
+\[A_1 = f(Z_1)\]
+
+\[Z_2 = A_1 \cdot W_2\]
+
+<h3 id="computing-the-loss">Computing the loss</h3>
+<p>Now once we have \(Z_2\), the next step is to compare this output to some ground-truth label \(Y\). A function called <em>loss function</em> takes in both \(Z_2\) and \(Y\) as inputs and maps them into a single number that represents how similar or different they are. For example, Mean Squared Error function: \(\sqrt(Z_2^2 - Y^2)\).</p>
+
+<p>For the sake of generality let’s consider the loss function to be \(L(Y, Z_2)\), hence</p>
+
+\[lossVal = L(Y,Z_2)\]
+
+<h3 id="backward-pass">Backward pass</h3>
+<p>With the help of backward pass, we update \(W_1\) and \(W_2\) such that \(lossVal\) is minimized. Before we update the parameters, we have to find the number that we have to add or subtract to decrease the \(lossVal\)?</p>
+
+<p>This is done with the help of chain rule from calculus. We compute the derivative of \(lossVal\) with respect to \(W_1\) and \(W_2\) and then update them with this quantity.</p>
+
+\[\frac{d\ lossVal}{d\ W_2} = \frac{d\ lossVal}{d\ Z_2} \times \frac{d\ Z_2}{d\ W_2}\]
+
+\[\frac{d\ lossVal}{d\ W_2} = A_1^T \cdot L^\prime; \textrm{where} \cdot \ \textrm{is dot product and } \ A_1^T \textrm{is the transpose}\]
+
+<blockquote>
+  <p>I used to get confused all the time whether I should pre-multiply or post-multiply \(A_1^T\)? 
+It’s fairly easy (but lengthy) to show its derivation but an easier way to remember this is that if in the equation \(Z_2 = A_1 \cdot W_2\), \(A_1\) is pre-multiplied, then in the derivative the \(A_1^T\) will also get pre-multiplied.</p>
+</blockquote>
+
+<p>We now have a derivative of loss with respect to \(W_2\), and to get to \(W_1\), we have to move through activation function \(f()\).</p>
+
+\[\frac{d\ lossVal}{d\ W_1} = \frac{d\ lossVal}{d\ Z_2} \times \frac{d\ Z_2}{d\ A_1} \times \frac{d\ A_1}{d\ Z_1} \times \frac{d\ Z_1}{d\ W_1}\]
+
+<p>Splitting the above equation into two products and solving similarly</p>
+
+\[\frac{d\ lossVal}{d\ W_1} = \frac{d\ lossVal}{d\ Z_1} \times \frac{d\ Z_1}{d\ W_1}\]
+
+\[\frac{d\ lossVal}{d\ W_1} = X^T \cdot \frac{d\ lossVal}{d\ Z_1}\]
+
+<p>Let’s look at the \(\frac{d\ lossVal}{d\ Z_1}\) now where we can write this partial derivative as</p>
+
+<p>\(\frac{d\ lossVal}{d\ Z_1} = ((L^\prime \cdot W_2^T) \times f^\prime);\textrm{where} \cdot \ \textrm{is dot product and } \times \textrm{is the elementwise product}\)</p>
+<blockquote>
+  <p>Note: Again, the equation was \(Z_2 = A_1 \cdot W_2\), where \(W_2\) was post-multiplied hence \(W_2^T\) will also get post multiplied. For the case of activation, it was an element-wise operation hence the derivate product will also be elementwise.</p>
+</blockquote>
+
+<p>Now combining the above two results, we get</p>
+
+\[\frac{d\ lossVal}{d\ W_1} = X^T \cdot ((L^\prime \cdot W_2^T) \times f^\prime)\]
+
+<h3 id="updating-parameters">Updating Parameters</h3>
+<p>Finally, the parameters are updated with will reduce the loss function value.</p>
+
+\[W_1 = W_1 - \frac{d\ lossVal}{d\ W_1}\]
+
+\[W_2 = W_2 - \frac{d\ lossVal}{d\ W_2}\]
+
+<h1 id="structure-of-iota">Structure of iota</h1>
+<p>The mathematics behind Deep Learning is fairly simple, and we can easily write the above two-layered Neural Network in python code under 20 lines. The problem arises when we need very large Neural Networks with hundreds of layers and millions of parameters. So, how can we code such a network where with minimum effort, we can scale the Network to whatever size we need or whatever activations or even layers?</p>
+
+<p>To answer all the above questions, I’ll move to another diagram of our Network where I’ll explain abstractions on different levels. Let’s first look at the lowest level where I can divide the whole network into <em>operations</em> of two types:</p>
+<ul>
+  <li>Operations with Parameters:  Dot product</li>
+  <li>Operations without Parameters: Activation Function</li>
+</ul>
+
+<p>The above explanation is put into a diagram shown below:</p>
+
+<p><img src=":/d367ac67edec4dd0b48cf7ad93dddf31" alt="02.png" /></p>
+
+<p>Now that I have operations, I can group multiple operations into a higher abstraction called <em>Layers</em>. The motivation behind doing this is that it’ll be tedious to work with individual operations and instead what I can do is put multiple of these into one layer and then work with the layers individually.</p>
+
+<p><img src=":/93964f86ced6405abdf36b0a1727cbfb" alt="03.png" /></p>
+
+<blockquote>
+  <p>Note: In our example, the 2nd layer has <em>Linear</em> as the element-wise operation.</p>
+</blockquote>
+
+<p>The final abstraction would be the whole <em>Neural Network</em> which is made up of multiple Layers.</p>
+
+<p><img src=":/4da9f4ed9a2e49668c7133ffd4d73e04" alt="04.png" /></p>
+
+<h1 id="conclusion">Conclusion</h1>
+<p>In this post, I first covered my motivation for creating a Deep Learning Framework from scratch, then I discussed briefly the mathematics behind Deep Learning and finally laid out the broad strokes with which I’ll design my library.</p>
+
+<p>In coming posts, I’ll delve deep into the different parts like Operations, Layers, Neural Network, etc and write efficient code that can be scaled properly.</p>
+
+<blockquote>
+  <p>If you’re still confused about the last section, please stick around for further blog posts and everything will get clearer as I discuss them in detail.</p>
+</blockquote>
+
+<h1 id="additional-material-recommended">Additional Material (recommended)</h1>
+<ul>
+  <li><a href="https://www.youtube.com/watch?v=aircAruvnKk"><strong>3blue1brown’s</strong> Deep Learning Series</a></li>
+</ul>
+
+<h1 id="references">References</h1>
+<ul>
+  <li>Weidman, Seth. Deep Learning from Scratch: Building with Python from First Principles. “ O’Reilly Media, Inc.”, 2019.</li>
+  <li>Trask, Andrew W. “Deep learning.” (2019).</li>
+</ul>
+
+:ET
