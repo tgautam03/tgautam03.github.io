@@ -2,7 +2,7 @@
 layout: post
 title:  "iota: A Deep Learning framework"
 date:   2021-05-23 18:46:08 +0530
-categories: iota
+categories: py
 ---
 
 ## Topics Covered
