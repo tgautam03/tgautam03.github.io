@@ -38,7 +38,7 @@ Notice that there are two types of *arrows* in the figure (green & red), and eac
 - *Red Arrows*: No mixing of information between neurons. This is an elementwise operation on each neuron and is known as *activation* in the case of Neural Network.
 
 ### Maths
-We can easily translate this picture into equations. Let's consider the three neurons in the *Input Layer* as $$x_1, x_2, x_3$$. We can represent these three values in a $$1 \times 3$$ matrix $$X$$ given as:
+We can easily translate this picture into equations. Let's consider the three neurons in the *Input Layer* as $x_1, x_2, x_3$. We can represent these three values in a $$1 \times 3$$ matrix $$X$$ given as:
 
 $$ 
 X = 
