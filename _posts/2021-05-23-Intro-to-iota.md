@@ -177,9 +177,9 @@ lossVal = L(Y,Z_2)
 $$
 
 #### Backward pass
-With the help of backward pass, we update $$W_1$$ and $$W_2$$ such that $$lossVal$$ is minimized. Before we update the parameters, we have to find the number that we have to add or subtract to decrease the $$lossVal$$? 
+With the help of backward pass, we update $W_1$ and $W_2$ such that $lossVal$ is minimized. Before we update the parameters, we have to find the number that we have to add or subtract to decrease the $lossVal$? 
 
-This is done with the help of chain rule from calculus. We compute the derivative of $$lossVal$$ with respect to $$W_1$$ and $$W_2$$ and then update them with this quantity. 
+This is done with the help of chain rule from calculus. We compute the derivative of $lossVal$ with respect to $W_1$ and $W_2$ and then update them with this quantity. 
 
 $$
 \frac{d\ lossVal}{d\ W_2} = \frac{d\ lossVal}{d\ Z_2} \times \frac{d\ Z_2}{d\ W_2}
