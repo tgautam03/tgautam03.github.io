@@ -2,7 +2,7 @@
 layout: post
 title:  "Part 1: An overview of Deep Learning"
 date:   2021-06-17 12:46:08 +0530
-categories: py
+categories: PyGrad
 ---
 
 ## Topics Covered

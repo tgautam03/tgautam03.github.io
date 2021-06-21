@@ -2,7 +2,7 @@
 layout: post
 title:  "Part 2: Training a Neural Network"
 date:   2021-06-21 15:46:08 +0530
-categories: py
+categories: PyGrad
 ---
 
 ## Topics Covered
