@@ -90,7 +90,7 @@ plt.ylabel("Loss Value")
 plt.show()
 ```
 
-![12.png](:/b973fecb875742f69a2bdfbc91fd4d50)
+![12.png](https://raw.githubusercontent.com/tgautam03/tgautam03.github.io/master/images/01-iota-intuitiveDL/12.png)
 
 
 The curve above shows that the network isn't improving much after a few thousand epochs. Let's see how the test results look.
