@@ -140,8 +140,9 @@ h_{1,0} && h_{1,1} && h_{1,2} && h_{1,3} && h_{1,4} && h_{1,5} \\
 h_{n-1,0} && h_{n-1,1} && h_{n-1,2} && h_{n-1,3} && h_{n-1,4} && h_{n-1,5} \\
 \end{pmatrix}; \textrm{Dimension=} n \times 6
 $$
+where each element
 $$
-\textrm{where} \ h_{i,j}=\sum_{k=0}^{9}({x_{i,k} \times w_{k,j}});\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
+h_{i,j}=\sum_{k=0}^{9}({x_{i,k} \times w_{k,j}});\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
 $$
 
 >Note: $$n$$ is the number of examples in the dataset.
@@ -185,8 +186,9 @@ z_{1,0} && z_{1,1} && z_{1,2} && z_{1,3} && z_{1,4} && z_{1,5} \\
 z_{n-1,0} && z_{n-1,1} && z_{n-1,2} && z_{n-1,3} && z_{n-1,4} && z_{n-1,5} \\
 \end{pmatrix}; \textrm{Dimension=} n \times 6
 $$
+where each element
 $$
-\textrm{where} \ z_{i,j}={h_{i,j} + b_{j}};\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
+z_{i,j}={h_{i,j} + b_{j}};\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
 $$
 
 #### Code
@@ -217,8 +219,9 @@ a_{1,0} && a_{1,1} && a_{1,2} && a_{1,3} && a_{1,4} && a_{1,5} \\
 a_{n-1,0} && a_{n-1,1} && a_{n-1,2} && a_{n-1,3} && a_{n-1,4} && a_{n-1,5} \\
 \end{pmatrix}; \textrm{Dimension=} n \times 6
 $$
+where each element
 $$
-\textrm{where} \ a_{i,j}=f(z_{i,j});\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
+a_{i,j}=f(z_{i,j});\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
 $$
 
 There are several *Activation functions* like *Sigmoid* activation:
@@ -311,9 +314,11 @@ Before *updating the weights and biases*, we need to quantify the difference bet
 A MSE loss function computes the *average of the squares of differences* between the predictions and labels (ground truth).
 $$
 \textrm{MSE}=\frac{1}{n}\sum_{i=0}^{n-1}(Y_i-Yhat_i)^2;
-\\ 
-\textrm{where}\ Y_i  \textrm{ is the ground-truth },\ Yhat_i \textrm{ is the prediction}; \\ \textrm{and } n \textrm{ is the number of examples} 
 $$
+where:
+- $$Y_i  \textrm{ : ground-truth }$$
+- $$Yhat_i \textrm{ : prediction}$$
+- $$n \textrm{ : number of examples}$$
 
 #### Code
 ```python
