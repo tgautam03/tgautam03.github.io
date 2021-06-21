@@ -140,7 +140,9 @@ h_{1,0} && h_{1,1} && h_{1,2} && h_{1,3} && h_{1,4} && h_{1,5} \\
 h_{n-1,0} && h_{n-1,1} && h_{n-1,2} && h_{n-1,3} && h_{n-1,4} && h_{n-1,5} \\
 \end{pmatrix}; \textrm{Dimension=} n \times 6
 $$
+
 where each element
+
 $$
 h_{i,j}=\sum_{k=0}^{9}({x_{i,k} \times w_{k,j}});\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
 $$
@@ -186,7 +188,9 @@ z_{1,0} && z_{1,1} && z_{1,2} && z_{1,3} && z_{1,4} && z_{1,5} \\
 z_{n-1,0} && z_{n-1,1} && z_{n-1,2} && z_{n-1,3} && z_{n-1,4} && z_{n-1,5} \\
 \end{pmatrix}; \textrm{Dimension=} n \times 6
 $$
+
 where each element
+
 $$
 z_{i,j}={h_{i,j} + b_{j}};\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
 $$
@@ -219,12 +223,15 @@ a_{1,0} && a_{1,1} && a_{1,2} && a_{1,3} && a_{1,4} && a_{1,5} \\
 a_{n-1,0} && a_{n-1,1} && a_{n-1,2} && a_{n-1,3} && a_{n-1,4} && a_{n-1,5} \\
 \end{pmatrix}; \textrm{Dimension=} n \times 6
 $$
+
 where each element
+
 $$
 a_{i,j}=f(z_{i,j});\ i=0 \ \textrm{to} \ n-1 ; j=0 \ \textrm{to} \ 5
 $$
 
 There are several *Activation functions* like *Sigmoid* activation:
+
 $$
 \textrm{Sigmoid} =\frac{1}{1+e^{-Z}}
 $$
@@ -315,6 +322,7 @@ A MSE loss function computes the *average of the squares of differences* between
 $$
 \textrm{MSE}=\frac{1}{n}\sum_{i=0}^{n-1}(Y_i-Yhat_i)^2;
 $$
+
 where:
 - $$Y_i  \textrm{ : ground-truth }$$
 - $$Yhat_i \textrm{ : prediction}$$
