@@ -36,14 +36,12 @@ In this post,
 2) **Output Format**: Maximum Pairwise Product
 
 3) **Constraints**: 
-    - Length of the sequence:  $$2 \le n \le 2 \cdot 10^5$$ 
-    - Each element of the sequence:  $$0 \le a_i \le 2 \cdot 10^5$$
+- Length of the sequence:  $$2 \le n \le 2 \cdot 10^5$$ 
+- Each element of the sequence:  $$0 \le a_i \le 2 \cdot 10^5$$
 
 4) **Time limits**: 
 - *C/C++*: 1 sec
-
 - *Python*: 5 secs
-
 - *Java*: 1.5 secs
 
 5) **Memory limits**: 512 Mb
