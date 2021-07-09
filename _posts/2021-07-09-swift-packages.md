@@ -11,9 +11,8 @@ categories: swift
 
 ## Intoduction
 I've had my eye on the [*swift programming language*](https://swift.org/) for quite some time now and that was for two reasons:
-
-1) Feels like *Python*.
-2) Runs like *C/C++*.
+- Feels like *Python*.
+- Runs like *C/C++*.
 
 These two qualities make *Swift* a compelling option for programmers (especially for ones doing scientific programming). So, when I started working through the [Data Structures and Algorithms Specialisation](https://www.coursera.org/specializations/data-structures-algorithms) offered by UC San Diego and HSE University, on Coursera, I thought it would be nice to code the algorithms in *swift* and then compare the performance and ease of use with other languages like *Python*, *C/C++* and *Java* (I'll not be coding in all these, but just use the benchmark provided in the course and try to match the *C* performance).
 
@@ -23,7 +22,7 @@ In this post,
 - I'll be introducing *Swift Package Manager* and explain everything by working on a very simple problem of **Pairwise Product**. 
 - I'll demonstrate how to we can create an *executable* so easily in the *swift programming language*, and then test different parts of the algorithm separately to isolate the error.
 
-> Note: I'll be using Linux (most of the tutorials online use MacOS, soo this provides something different).
+> Note: I'll be using Linux (most of the tutorials online use MacOS, so this provides something different).
 
 ## Problem Statement
 
@@ -41,8 +40,11 @@ In this post,
     - Each element of the sequence:  $$0 \le a_i \le 2 \cdot 10^5$$
 
 4) **Time limits**: 
+
     - *C/C++*: 1 sec
+
     - *Python*: 5 secs
+
     - *Java*: 1.5 secs
 
 5) **Memory limits**: 512 Mb
@@ -279,7 +281,7 @@ Let's now run the command `swift run`.
 
 Examples:
 
-1) Manually entering arrays
+- Manually entering arrays
     ```
     ❯ swift run
     [5/5] Build complete!
@@ -293,7 +295,8 @@ Examples:
     (FAST) Time elapsed: 8.940696716308594e-06 s.
     NAIVE / FAST: 5.026666666666666
     ```
-2) Random Arrays
+
+- Random Arrays
     ```
     ❯ swift run
     [0/0] Build complete!
