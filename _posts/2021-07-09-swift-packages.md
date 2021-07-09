@@ -40,12 +40,11 @@ In this post,
     - Each element of the sequence:  $$0 \le a_i \le 2 \cdot 10^5$$
 
 4) **Time limits**: 
+- *C/C++*: 1 sec
 
-    - *C/C++*: 1 sec
+- *Python*: 5 secs
 
-    - *Python*: 5 secs
-
-    - *Java*: 1.5 secs
+- *Java*: 1.5 secs
 
 5) **Memory limits**: 512 Mb
 
