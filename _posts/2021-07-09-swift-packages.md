@@ -315,7 +315,7 @@ This is where **Unit Testing** comes in and *SPM* has made this very simple.
 
 ## Unit Testing
 To add tests for the algorithm, just add functions inside the `final class` body. For example, I wrote three tests:
-- Tests *Naive Implementation* against a standard algorithm (that I know is corect).
+- Tests *Naive Implementation* against a standard algorithm (that I know is correct).
 - Tests *Fast Implementation* against a standard algorithm.
 - Compares *Naive Implementation* and *Fast Implementation*.
 
@@ -384,7 +384,7 @@ final class _2_max_pairwise_prodTests: XCTestCase {
 > Note: Functions here have to start with word `test`.
 
 Now we have 2 different options here:
-- Run each test differently; `swift test --filter funcName`
+- Run each test separately; `swift test --filter funcName`
     
     For example, testing *Fast Implementation*:
     ```
