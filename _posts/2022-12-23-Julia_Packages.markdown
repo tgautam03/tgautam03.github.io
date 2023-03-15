@@ -110,6 +110,11 @@ Let's now add our development package **jac** to the path so that Julia can find
   [e91179df] + jac v0.1.0 `../../../dev/jac
 ```
 
+What this does is let is us import `jac` as a library anywhere!
+```julia
+using jac
+```
+
 Now, let's generate the documentation by executing *make.jl* file inside *docs/src/* folder:
 ```sh
 ~/dev/jac/docs git:(master)
@@ -122,6 +127,38 @@ julia make.jl
 [ Info: Populate: populating indices.
 [ Info: RenderDocument: rendering document.
 [ Info: HTMLWriter: rendering HTML pages.
+```
+
+I've decided to document the development of this library and also provide information on how to use this library. For this, I've created two separate sections on the website:
+- Development: It's just a folder with same name inside *docs/src/*, and contains different articles explaining how the code was developed.
+- Examples: It's just a folder with same name inside *docs/src/*, and contains different articles explaining how code can be re-used.
+
+To make this work I've also modified *make.jl* file:
+```julia
+using Documenter
+using jac
+
+makedocs(
+    sitename = "jac",
+    format = Documenter.HTML(),
+    modules = [jac],
+    pages = [
+        "Home" => "index.md",
+        "Development Blogs" => Any[
+            "Development/Scalar_AD.md",
+        ],
+        "Examples" => Any[
+            "Examples/Simple_Scalar_Arithmetics.md",
+        ],
+    ],
+)
+
+# Documenter can also automatically deploy documentation to gh-pages.
+# See "Hosting Documentation" and deploydocs() in the Documenter manual
+# for more information.
+# deploydocs(
+#     repo = #URL
+# )
 ```
 
 ## Automatic Testing
@@ -175,6 +212,10 @@ jac/
 ├─ .git/
 ├─ docs/
 │  ├─ src/
+│  │  ├─ Development
+│  │  |     ├─
+│  |  ├─ Examples
+│  │  |     ├─
 │  │  └─ index.md
 │  ├─ Project.toml
 │  └─ make.jl
@@ -272,6 +313,10 @@ jac/
 │     └─ Runtests.yml
 ├─ docs/
 │  ├─ src/
+│  │  ├─ Development
+│  │  |     ├─
+│  |  ├─ Examples
+│  │  |     ├─
 │  │  └─ index.md
 │  ├─ Project.toml
 │  └─ make.jl
