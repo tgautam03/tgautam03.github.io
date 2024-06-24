@@ -1,7 +1,7 @@
 # Site settings
-title: Monograph
+title: N Questions
 email: "[first_name(without caps)].[last_name(without caps)][at]utah.edu"
-description: "Everything High Performance"
+description: "Any problem can be divided into N simple questions"
 baseurl: ""
 url: "http://tgautam03.github.io"
 #twitter_username:
