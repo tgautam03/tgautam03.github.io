@@ -7,7 +7,7 @@ includelink: true
 
 I am *Tushar Gautam*, a graduate of *Indian Institute of Technology Roorkee, India*, with a masters' degree in Geophysics and love for computers. I'm currently a Graduate Research Assistant at [Scientific Computing and Imaging Institute](https://www.sci.utah.edu/home.html) and pursuing PhD in Computing at the University of Utah.
 
-**Contact email**: [first_name].[last_name][at]utah.edu
+**Contact email**: 0mean1sigma[at]gmail.com
 
 ### At [IIT Roorkee](https://iitr.ac.in/), 2015-2020
 For my Masters’ Thesis, I worked on *Seismic Velocity Modeling using Deep
