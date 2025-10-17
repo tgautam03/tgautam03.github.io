@@ -3,19 +3,21 @@
 
   {% include head.html %}
 
-    <body>
+  <body>
 
     {% include header.html %}
 
     <div class="page-content">
       <div class="wrap">
-      {{ content }}
+        {% unless page.hidden %}
+          {{ content }}
+        {% endunless %}
       </div>
     </div>
 
     {% include footer.html %}
 
-    </body>
+  </body>
 </html>
 
 <script type="text/javascript">
