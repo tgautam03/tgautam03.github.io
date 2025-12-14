@@ -221,3 +221,25 @@ __global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float 
     nvcuda::wmma::store_matrix_sync(&d_C_ptr[cRow * C_n_cols + cCol], c_frag, C_n_cols, nvcuda::wmma::mem_row_major);
 }
 ```
+
+## Why GFLOPS?
+Execution time is a perfectly fine metric to analyze the performance of a program. However, a better option is to look at the number of operations performed per second by the function or Giga Floating-Point Operations per Second (GFLOPS). When multiplying two $$M \times \K$$ and $$K \times N$$ matrices, each output matrix element requires approximately $$K$$ multiplications and $$K$$ additions, i.e., $$2K$$ operations. As there are total $$M \times N$$ output elements, the total number of operations is $$2 \times M \times N \times K$$. Dividing this number by the time it took to perform matrix multiplication gives FLOPS for the implemented algorithm (that can be converted to GFLOPS).
+
+## Benchmark
+Figure 6 shows the GFLOPS for the tiled version that uses CUDA cores against the naive version that uses tensor cores. The jump in performance is massive (especially for large matrices)! 
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-10-30-TensorCores/Figure_6.png">
+<div class="thecap">Figure 6: GFLOPS for matrix multiplications on a CUDA and Tensor cores</div>
+</div>
+
+It's not ideal to compare CUDA cores to tensor cores, and the tiled version is not optimal. But so is the version using tensor cores. Figure 7 shows the cuBLAS matrix multiplication against the naive version that I've written.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-10-30-TensorCores/Figure_7.png">
+<div class="thecap">Figure 7: GFLOPS for matrix multiplications on Tensor cores with cuBLAS and Naive implementations</div>
+</div>
+
+## References
+- YouTube video for this blog: [NVIDIA Tensor Cores Programming](https://www.youtube.com/watch?v=Yt1A-vaWTck&t=4s)
+- Code repository for this blog: [tGeMM](https://github.com/tgautam03/tGeMM)
