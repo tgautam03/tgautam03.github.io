@@ -131,3 +131,10 @@ My goal with this mini project is to code general matrix multiplication from scr
     - Vectorized memory accesses
 
 ## What is SGeMM
+SGeMM stands for Single-Precision General Matrix Multiplication. A matrix is a rectangular array of numbers arranged in rows and columns. So, an $$M$$ by $$N$$ matrix (written as $$M \times N$$) has $$M$$ rows and $$N$$ columns with a total of $$M \times N$$ numbers. The benefit of arranging numbers in a matrix is that it gives structure to the data, and we can easily access any number by specifying its location.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-20-xGeMM/Fig6.png">
+<div class="thecap">Figure 5: A matrix of size $$m \times n$$</div>
+</div>
+
