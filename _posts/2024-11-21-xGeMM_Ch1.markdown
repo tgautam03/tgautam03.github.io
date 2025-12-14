@@ -1,0 +1,15 @@
+---
+layout: post
+comments: false
+title:  "xGeMM Chapter 1: Getting Started with CUDA Programming"
+excerpt: "A simple introduction explaining how to get started with CUDA."
+date:   2024-11-21 10:00:00
+---
+
+## Introduction
+If we look at the matrix multiplication algorithm carefully (Figure 2.1), it's obvious that each output matrix element can be computed independently. Each output element requires a unique combination of row and column of the input matrices, and most importantly, one output element does not depend on any other output element.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig1.gif">
+<div class="thecap">Figure 1: Matrix multiplication algorithm</div>
+</div>
