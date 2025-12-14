@@ -1,0 +1,7 @@
+---
+layout: post
+comments: false
+title:  "xGeMM Chapter 6: Vectorized Memory Accesses"
+excerpt: "Explaining vectorized memory accesses in GPUs."
+date:   2024-11-26 10:00:00
+---

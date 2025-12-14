@@ -250,39 +250,125 @@ Now that the data transfer is all taken care of let's see how we can program the
 
 Now, who decides which thread works on which element of the matrix $$\bf{C}$$? We need to understand how threads are organized on a GPU to answer this question. 
 
+When the kernel function is called, it creates a grid of threads on the GPU. The grid is subdivided into multiple blocks, each containing the same amount of threads. The blocks in a grid and threads in a block can be arranged in a 1D/2D/3D manner with coordinates $$(x,y,z)$$ assigned to the blocks and the threads inside each block. 
 
+The 1D case is the simplest, with only an $$x$$ index. For example, consider a grid with 3 blocks and 4 threads in each block. The blocks will then have $$x$$ coordinates ranging from 0 to 2, and threads in each block will have $$x$$ coordinates ranging from 0 to 3. It is important to note that each block's thread index is local.
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig6.png">
-<div class="thecap">Figure 6:</div>
+<div class="thecap">Figure 6: 1D grid and 1D block</div>
 </div>
+
+In the 2D case, there are $$x$$ and $$y$$ indices. For example, consider a grid with 3 blocks in $$x$$ direction and 2 blocks in $$y$$ direction. Each block has 4 and 2 threads in the $$x$$ and $$y$$ directions. In the case of a 2D organization, it is important to note that the $$y$$ index precedes $$x$$, i.e., it's written as $$(y,x)$$ such that $$y$$ is for the vertical direction and $$x$$ is for the horizontal.
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig7.png">
-<div class="thecap">Figure 7:</div>
+<div class="thecap">Figure 7: 2D grid and 2D block</div>
 </div>
+
+For example, consider matrix multiplication involving $$5 \times 5$$ matrices ($$\bf{C} = \bf{A} \cdot \bf{B}$$). Let's define a $$2 \times 3$$ block to perform matrix multiplication in parallel. We need a $$3 \times 2$$ grid to cover all the output matrix elements.
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig8.png">
-<div class="thecap">Figure 8:</div>
+<div class="thecap">Figure 8: Thread Blocks and Grid</div>
 </div>
+
+Threads shown in Figure 8 have local indices similar to the ones shown in Figure 7. We can calculate a global index for each thread using these local and block indices. This global index is nothing but a unique index for each thread. 
+
+$$\text{Global x} = \text{blockDim}.x \cdot \text{blockIdx}.x + \text{threadIdx}.x$$ 
+
+$$\text{Global y} = \text{blockDim}.y \cdot \text{blockIdx}.y + \text{threadIdx}.y$$
+
+- `blockDim.x` and `blockDim.y` are the number of blocks in $$x$$ and $$y$$ axis respectively.
+- `blockIdx.x` and `blockIdx.y` are the block index in $$x$$ and $$y$$ axis respectively.
+- `threadIdx.x` and `threadIdx.y` are the thread index in $$x$$ and $$y$$ axis respectively.
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig9.png">
-<div class="thecap">Figure 9:</div>
+<div class="thecap">Figure 9: Global Thread Indices</div>
 </div>
+
+Figure 9 shows the global indices for all the threads alongside the row and column indices for the element of matrix $$\bf{C}$$. One way to solve this in parallel is to match the thread's $$x$$ index with the row index and $$y$$ with the column index. 
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig10.png">
-<div class="thecap">Figure 10:</div>
+<div class="thecap">Figure 10: Thread to Element Mapping</div>
 </div>
+
+Figure 10 shows the thread-to-element mapping for the 1st column of the elements of $$\bf{C}$$. The same procedure will map the rest of the elements to the threads (Figure 11). Note that there are additional threads that map to non-existent elements. This is common, and in code, we can make sure that these threads stay idle. 
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig11.gif">
-<div class="thecap">Figure 11:</div>
+<div class="thecap">Figure 11: Animation showing thread to element mapping</div>
 </div>
+
+Looking back at the general case for parallel matrix multiplication involving matrix $$\bf{A}$$ of size $$(M \times K)$$ and $$\bf{B}$$ of size $$(K \times N)$$, the resulting matrix $$\bf{C}$$ will be $$M \times N$$. The first thing we need to decide is the dimensionality of the block (i.e., the number of threads and their organization in a block). CUDA restricts the total number of threads in a block can't be more than 1024. This means that the organization can be $$(512,1,1)$$ or $$(8,16,4)$$ (just as long as the total number is not greater than 1024). As an example, let's go with $$(32,32)$$. Based on this, we can determine the total number of blocks required in the $$x$$ and $$y$$ dimensions.
+
+The custom-defined CUDA type `dim3` defines:
+- The number of threads in each block: `dim3 dim_block(32, 32, 1)`. Note that in this case, the $$z$$ dimension is set to 1.
+- The number of blocks in the grid can then be decided based on the matrix size and the total threads in each block: `dim3 dim_grid(ceil(C_n_rows/32.0), ceil(C_n_cols/32.0), 1);`.
+
+```cuda
+void naive_xgemm(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+    // Kernel execution
+    dim3 dim_block(32, 32, 1);
+    dim3 dim_grid(ceil(C_n_rows/(float)(32)), ceil(C_n_cols/(float)(32)), 1);
+    //.
+    //.
+    //.
+}
+```
+
+Now that a grid of threads is defined, the next step is to code the instructions these threads need to execute. This is done with the kernel function. It is a normal-looking function that each thread executes independently. In short, all the threads perform the same instructions. The only difference between different threads is the data these instructions are performed on. As all the threads access the same function, we can use the local indices to compute the global index and then perform the necessary calculations.
+
+```cuda
+__global__ void naive_mat_mul_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+    // Working on C[row,col]
+    const int row = blockDim.x*blockIdx.x + threadIdx.x;
+    const int col = blockDim.y*blockIdx.y + threadIdx.y;
+
+    // Parallel mat mul
+    if (row < C_n_rows && col < C_n_cols)
+    {
+        // Value at C[row,col]
+        float value = 0;
+        for (int k = 0; k < A_n_cols; k++)
+        {
+            value += d_A_ptr[row*A_n_cols + k] * d_B_ptr[k*C_n_cols + col];
+        }
+
+        // Assigning calculated value (SGEMM is C = α*(A @ B)+β*C and in this repo α=1, β=0)
+        d_C_ptr[row*C_n_cols + col] = 1*value + 0*d_C_ptr[row*C_n_cols + col];
+    }
+}
+```
+
+> Notice how there is no loop in the kernel function. Instead, each thread replaces a loop iteration and operates in parallel to other threads. `__global__` is a qualifier keyword that suggests this function is callable from the host and can only be executed on the device.
+
+The final step is to launch this kernel function so that all the threads execute it. This is done by specifying the grid organization inside `<<< >>>` and passing the device variables.
+
+```cuda
+void naive_xgemm(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+    // Kernel execution
+    dim3 dim_block(32, 32, 1);
+    dim3 dim_grid(ceil(C_n_rows/(float)(32)), ceil(C_n_cols/(float)(32)), 1);
+    naive_mat_mul_kernel<<<dim_grid, dim_block>>>(d_A_ptr, d_B_ptr, d_C_ptr, C_n_rows, C_n_cols, A_n_cols);
+}
+```
+
+## Benchmark
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig12.png">
-<div class="thecap">Figure 12:</div>
+<div class="thecap">Figure 12: cuBLAS vs My Code</div>
 </div>
+
+## References
+- YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
+- Code repository for this blog: [xGeMM](https://github.com/tgautam03/xGeMM)
+
+- Previous blog in this series: [xGeMM: GPU Accelerated Matrix Multiplication (almost) like cuBLAS](https://tgautam03.github.io/2024/11/20/xGeMM/)
+- Next blog in this series: []()

@@ -1,0 +1,7 @@
+---
+layout: post
+comments: false
+title:  "xGeMM Chapter 5: 2D Thread Coarsening using GPU Registers"
+excerpt: "Explaining 2D thread coarsening using GPU registers."
+date:   2024-11-25 10:00:00
+---

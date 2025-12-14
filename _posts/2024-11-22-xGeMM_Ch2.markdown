@@ -1,0 +1,7 @@
+---
+layout: post
+comments: false
+title:  "xGeMM Chapter 2: GPU Global Memory Coalescing"
+excerpt: "Explaining memory coalescing in GPUs."
+date:   2024-11-22 10:00:00
+---

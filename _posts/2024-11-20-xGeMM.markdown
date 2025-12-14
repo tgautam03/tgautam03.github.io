@@ -323,3 +323,5 @@ cublas_check(cublasSgemm(handle,
 ## References
 - YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
 - Code repository for this blog: [xGeMM](https://github.com/tgautam03/xGeMM)
+
+- Next blog in this series: [xGeMM Chapter 1: Getting Started with CUDA Programming](https://tgautam03.github.io/2024/11/21/xGeMM_Ch1/)
