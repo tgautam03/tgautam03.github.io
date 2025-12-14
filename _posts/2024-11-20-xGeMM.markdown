@@ -147,8 +147,10 @@ To multiply matrices $$\bf{A}$$ and $$\bf{B}$$:
 1. Take each row of $$\bf{A}$$ and perform element-wise multiplication with each column of $$\bf{B}$$.
 2. The resulting elements are the sum of these multiplications.
 
-Mathematically, this is expressed as: 
+Mathematically, this is expressed as:
+
 $$\textbf{AB}_{ij} = \sum_{k=0}^{K-1} \textbf{A}_{i,k} \cdot \textbf{B}_{k,j}$$
+
 ​Where $$\textbf{AB}_{ij}$$ is the element in the i-th row and j-th column of the resulting matrix.
 
 <div class="imgcap">
