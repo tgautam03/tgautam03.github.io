@@ -7,9 +7,282 @@ date:   2024-11-21 10:00:00
 ---
 
 ## Introduction
-If we look at the matrix multiplication algorithm carefully (Figure 2.1), it's obvious that each output matrix element can be computed independently. Each output element requires a unique combination of row and column of the input matrices, and most importantly, one output element does not depend on any other output element.
+If we look at the matrix multiplication algorithm carefully (Figure 1), it's obvious that each output matrix element can be computed independently. Each output element requires a unique combination of row and column of the input matrices, and most importantly, one output element does not depend on any other output element.
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig1.gif">
 <div class="thecap">Figure 1: Matrix multiplication algorithm</div>
+</div>
+
+```cuda
+void cpu_xgemm(MatrixFP32 A_mat, MatrixFP32 B_mat, MatrixFP32 C_mat)
+{
+    // Getting A Matrix Dimension
+    int A_n_rows = A_mat.n_rows; 
+    int A_n_cols = A_mat.n_cols;
+
+    // Getting B Matrix Dimension
+    int B_n_rows = B_mat.n_rows; 
+    int B_n_cols = B_mat.n_cols;
+
+    // Getting C Matrix Dimension
+    int C_n_rows = C_mat.n_rows; 
+    int C_n_cols = C_mat.n_cols;
+
+    // Asserting dimensions
+    assert (A_n_cols == B_n_rows && "Matrices A & B must have one common dimension");
+    assert (A_n_rows == C_n_rows && "A rows must be equal to C rows");
+    assert (B_n_cols == C_n_cols && "B cols must be equal to C cols");
+
+    // Matrix Multiplication
+    for (int row = 0; row < A_n_rows; row++)
+    {
+        for (int col = 0; col < B_n_cols; col++)
+        {
+            float val = 0.0f;
+            for (int k = 0; k < A_n_cols; k++)
+            {
+                val += A_mat.ptr[row*A_n_cols + k] * B_mat.ptr[k*B_n_cols + col];
+            }
+            C_mat.ptr[row*C_n_cols + col] = val;
+        }
+    }
+}
+```
+
+This means we can parallelize loops `row` and `col` and reduce the computation cost significantly. GPUs are designed specifically for problems like this. Figure 2 shows a screenshot from NVIDIA's website. The first thing they mention about their GPUs is the number of CUDA cores. CUDA cores are the basic computational units in NVIDIA GPUs that handle parallel processing tasks.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig2.png">
+<div class="thecap">Figure 2: NVIDIA GPU specifications</div>
+</div>
+
+> There is a lot more to a GPU than the number of cores and we will discuss other details whenever they are necessary. The last thing I want to do is overwhelm with details at the very start and lose sight of the goal. 
+
+## CPU and GPU
+CPUs and GPUs have execution units (called cores) that perform the arithmetic operations and an off-chip memory unit (RAM and VRAM, respectively) to store the required data. The big difference is that a CPU has much fewer cores than a GPU.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig3.png">
+<div class="thecap">Figure 3: CPU and GPU</div>
+</div>
+
+A GPU can't function independently. It's the job of a CPU to move data between RAM and VRAM (or global memory). In other words, a CPU can be seen as an instructor who manages most of the tasks and is responsible for assigning specific tasks to the GPU (where it has an advantage). 
+
+On the software side of things, we don't control the processing units. Instead, the hardware spawns threads, which a programmer can work with. A thread can be seen as an individual worker, and the execution of a thread is sequential as far as a user is concerned, i.e., a worker can only do one task at a time, but we can have multiple workers that can all work in parallel. 
+
+> Threads are at the heart of modern computing. A thread is a simplified view of how a processor executes a sequential program in modern computers.
+
+GPUs are suited for parallel programming because the hardware can spawn millions of threads (way more than the number of physical cores). Conversely, CPUs can only generate a handful of threads (~8 to 128). 
+
+## GPU Programming Model
+When we write a program in a high-level language like C/C++, by default, the CPU execution uses a single thread. All the matrices are on RAM (at this point), and the CPU thread copies the data to global memory. The GPU can then spawn multiple threads that work in parallel to reduce computation time. Once the execution finishes, the CPU thread copies the results from global memory to RAM. 
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig4.png">
+<div class="thecap">Figure 4: GPU programming model</div>
+</div>
+
+A CPU thread can't just copy data straight away. The first step is to allocate the exact amount of memory required to global memory. It is done using `cudaMalloc` function (which is provided by CUDA). This function accepts two parameters:
+- The first parameter is the address of the pointer variable for the select matrix. The address of this pointer must be cast (`void **`) because the function expects a generic pointer (not restricted to a specific type).
+- The second parameter is the size of the data to be allocated (in number of bytes).
+
+```cuda
+// Device array pointers for N x N matrix
+float* d_A;
+
+// Device memory allocation
+cudaError_t err_A = cudaMalloc((void**) &d_A, N*N*sizeof(float));
+// CUDA error checking code (see code repository for more details)
+CUDA_CHECK(err_A);
+```
+
+> The first parameter is the address of the pointer because this allows the `cudaMalloc` function to return a value (of type `cudaError_t`) reporting errors during global memory allocation (which can then be passed to the CUDA error-checking code).
+
+As I'm using a custom `class MatrixFP32` to handle matrices, I can embed the above mentioned code such that global memory gets allocated whenever an object destined for GPU is created. To do this, I made two modifications:
+1. Added a member variable `on_device` that keeps track of whether the object is destined for CPU or GPU memory (this is set to true for the GPU).
+2. Added a separate initialization/memory allocation code for global memory in the constructor and modified the free_mat method appropriately.
+
+```cuda
+class MatrixFP32
+{
+public:
+    const int n_rows;        // Number of rows
+    const int n_cols;        // Number of cols
+
+    // Pointer to dynamic array
+    float* ptr;
+    
+    // Matrix in device memory: true; else: false
+    const bool on_device; 
+    
+    // Constructor to initialize n_rows x n_cols matrix
+    MatrixFP32(int n_rows_, int n_cols_, bool on_device);
+    
+    // Free memory
+    void free_mat();
+};
+
+MatrixFP32::MatrixFP32(int n_rows_, int n_cols_, bool on_device_) : n_rows(n_rows_), n_cols(n_cols_), on_device(on_device_)
+{
+    if (on_device_ == false)
+    {
+        // Initialize dynamic array
+        ptr = new float[n_rows*n_cols];
+    }
+    else
+    {
+        // Allocate device memory
+        cudaError_t err = cudaMalloc((void**) &ptr, n_rows*n_cols*sizeof(float));
+        cuda_check(err);
+    }
+}
+
+void MatrixFP32::free_mat()
+{
+    if (on_device == false)
+        delete[] ptr;
+    else
+        cudaFree(ptr);
+}
+```
+
+Once the memory has been allocated in the global memory, data can be transferred between RAM and global memory using cudaMemcpy function. This function accepts four parameters:
+- Pointer to the destination
+- Pointer to the source
+- Number of bytes to be copied
+- The direction of transfer: 
+    - When copying data from RAM to global memory, this will be `cudaMemcpyHostToDevice`
+    - When copying data from global memory to RAM, this will be `cudaMemcpyDeviceToHost` 
+    - Note that these are symbolic predefined constants of the CUDA programming environment.
+
+```cuda
+// Copying A to device memory
+cudaError_t err_A_ = cudaMemcpy(d_A, A, N*N*sizeof(float), cudaMemcpyHostToDevice);
+CUDA_CHECK(err_A_);
+
+// Copy C to host memory
+cudaError_t err_C_ = cudaMemcpy(C, d_C, N*N*sizeof(float), cudaMemcpyDeviceToHost);
+CUDA_CHECK(err_C_);
+```
+
+> In accelerator language, host refers to the CPU and device is the accelerator, here the GPU.
+
+I added two more methods to the class that can copy data between CPU and GPU (while checking the size compatibility and other details) to automate much of this stuff.
+
+```cuda
+void MatrixFP32::copy_to_device(MatrixFP32 d_mat)
+{
+    // Make sure that ptr is on host 
+    assert(on_device == false && "Matrix must be in host memory");
+    assert(d_mat.on_device == true && "Input Matrix to this function must be in device memory");
+
+    // Copying from host to device memory
+    cudaError_t err = cudaMemcpy(d_mat.ptr, ptr, n_rows*n_cols*sizeof(float), cudaMemcpyHostToDevice);
+    cuda_check(err);
+}
+
+void MatrixFP32::copy_to_host(MatrixFP32 h_mat)
+{
+    // Make sure that ptr is on device
+    assert(on_device == true && "Matrix must be in device memory");
+    assert(h_mat.on_device == false && "Input Matrix to this function must be in host memory");
+
+    // Copying from host to device memory
+    cudaError_t err = cudaMemcpy(h_mat.ptr, ptr, n_rows*n_cols*sizeof(float), cudaMemcpyDeviceToHost);
+    cuda_check(err);
+}
+```
+
+This allows us to easily transfer data between CPU and GPU with very few visible lines of code.
+
+```cuda
+// Define MatrixFP32
+MatrixFP32 A_FP32 = MatrixFP32(n, n, false);
+MatrixFP32 B_FP32 = MatrixFP32(n, n, false);
+MatrixFP32 C_FP32 = MatrixFP32(n, n, false);
+
+// Initialize Matrix
+// .
+// .
+// .
+
+// Move matrix to device
+MatrixFP32 d_A_FP32 = MatrixFP32(n, n, true); 
+A_FP32.copy_to_device(d_A_FP32);
+
+MatrixFP32 d_B_FP32 = MatrixFP32(n, n, true); 
+B_FP32.copy_to_device(d_B_FP32);
+
+MatrixFP32 d_C_FP32 = MatrixFP32(n, n, true); 
+C_FP32.copy_to_device(d_C_FP32);
+
+// Perform computations on GPU
+// .
+// .
+// .
+
+// Copy results to host
+d_C_FP32.copy_to_host(C_FP32);
+
+// Free Memory
+A_FP32.free_mat();
+B_FP32.free_mat();
+C_FP32.free_mat();
+
+d_A_FP32.free_mat();
+d_B_FP32.free_mat();
+d_C_FP32.free_mat();
+```
+
+## Parallel Matrix Multiplication
+Now that the data transfer is all taken care of let's see how we can program the GPU to perform matrix multiplication in parallel. The algorithm for parallel matrix multiplication involving matrix $$\bf{A}$$ of size $$(M \times K)$$ and $$\bf{B}$$ of size $$(K \times N)$$ is as follows:
+- $$M \cdot N$$ threads are generated on the GPU (one to compute each element of the matrix $$\bf{C}$$, which is of size $$M \times N$$).
+- Each thread:
+    - Retrieves a row of matrix $$\bf{A}$$ and a column of matrix $$\bf{B}$$.
+    - Loops over the elements.
+    - Multiplies the two numbers and add the result to the total.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig5.gif">
+<div class="thecap">Figure 5: Parallel Matrix Multiplication</div>
+</div>
+
+Now, who decides which thread works on which element of the matrix $$\bf{C}$$? We need to understand how threads are organized on a GPU to answer this question. 
+
+
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig6.png">
+<div class="thecap">Figure 6:</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig7.png">
+<div class="thecap">Figure 7:</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig8.png">
+<div class="thecap">Figure 8:</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig9.png">
+<div class="thecap">Figure 9:</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig10.png">
+<div class="thecap">Figure 10:</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig11.gif">
+<div class="thecap">Figure 11:</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-21-xGeMM_Ch1/Fig12.png">
+<div class="thecap">Figure 12:</div>
 </div>
