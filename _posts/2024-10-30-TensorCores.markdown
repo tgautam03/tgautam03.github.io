@@ -46,3 +46,178 @@ Technically speaking, tensor cores perform matrix multiplication and accumulatio
 </div>
 
 There are other options that you can find in the [NVIDIA documentation](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#element-types-and-matrix-sizes) and moving forward, I will be working with $$16 \times 16$$ matrix dimensions. For an arbitrary matrix size, I must pad the matrices (with zeros) such that they are a multiple of 16 and then perform matrix multiplication using multiple $$16 \times 16$$ tiles. When working with tensor cores, a big difference (compared to CUDA cores) is that they work on the warp level. This means all threads in a warp (32 threads) cooperate to perform one set of $$16 \times 16$$ matrix multiplication and accumulation. 
+
+Consider an example where matrices $$\bf{A}$$, $$\bf{B}$$, and $$\bf{C}$$ are $$32 \times 32$$. As tensor cores can only work with $$16 \times 16$$ matrices, the idea is to split the $$32 \times 32$$ matrices into 4 tiles (each $$16 \times 16$$). To keep things simple, I will define 4 blocks arranged in a $$2 \times 2$$ grid (shown in Figure 4). Each block has 32 threads (i.e., a single warp) and is responsible for computing 1 tile of the output matrix $$\bf{C}$$. 
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-10-30-TensorCores/Figure_4.png">
+<div class="thecap">Figure 4: Matrix Multiplication using tensor cores</div>
+</div>
+
+For this example, each tile of $$\bf{D}$$ will be computed in two phases. Consider $$\text{tile}(0,0)$$ (shown in Figure 5); in phase 0, all 32 threads cooperatively load $$\text{tile}(0,0)$$ of matrix $$\bf{A}$$ and $$\bf{B}$$ into tensor cores and perform the partial matrix multiplication. In phase 1, the same 32 threads load $$\text{tile}(0,1)$$ of matrix $$\bf{A}$$ and $$\text{tile}(1,0)$$ of matrix $$\bf{B}$$ into tensor cores and finish the matrix multiplication.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-10-30-TensorCores/Figure_5.png">
+<div class="thecap">Figure 5: Tiled Matrix Multiplication using tensor cores</div>
+</div>
+
+> Tiles are not really loaded into the cores itself. But, as a programmer we should not worry about how data is being moved from global memory to the tensor cores.
+
+While coding the general matrix multiplication using tensor cores, the first step is to define the tile sizes. For my GPU, I've set this at $$16 \times 16$$, and then using this alongside the fact that each block has 32 threads, we can define the number of blocks needed.
+
+```cuda
+// WMMA fragment dimensions
+const int WMMA_M = 16; // Number rows in tiles of A and C
+const int WMMA_N = 16; // Number cols in tiles of B and C
+const int WMMA_K = 16; // Number cols in tiles of A or rows in tiles of B
+
+// Kernel execution
+dim3 dim_block(32, 1);
+dim3 dim_grid(C_n_rows / WMMA_M, C_n_cols / WMMA_N);
+```
+
+Once we have the grid defined, we can start writing the kernel function. Inside the kernel function, we first identify the warp we are working with. Remember that tensor cores work on the warp level, and to keep things simple, I've kept 1 warp per block. 
+
+```cuda
+__global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols) 
+{
+    // Tile using a 2D grid
+    int warpM = blockIdx.x;
+    int warpN = blockIdx.y;
+    
+    //.
+    //.
+    //.
+}
+```
+
+The next step is to allocate memory for these tiles. Tensor cores work with fragments. Fragments are data structures that represent portions of matrices used in tensor core operations. They are used to load, store, and manipulate matrix data for tensor core computations. On the hardware level, fragments are loaded into registers of warp threads. However, we don't need to worry about moving the data manually. CUDA provides a convenient way to do this, and all we have to do is define the following: 
+1. Whether it's matrix $$\bf{A}$$, $$\bf{B}$$, or $$\bf{C}$$. 
+2. The size of the fragment using `WMMA_M`, `WMMA_N`, `WMMA_K`.
+3. Precision (half or float) of the data.
+4. Memory layout (row-major or column-major) of the data.
+
+```cuda
+__global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols) 
+{
+    // Tile using a 2D grid
+    int warpM = blockIdx.x;
+    int warpN = blockIdx.y;
+    
+    // Declare the fragments
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> a_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
+
+    //.
+    //.
+    //.
+}
+```
+
+> Note that, for matrix $$\bf{D}$$, we use an accumulator because we will perform matrix multiplication in multiple phases, and the result from each phases is added to the previous phases results.
+
+We can initialize the output matrix fragment to zeros and split the input matrices into multiple tiles using a loop.
+
+```cuda
+__global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols) 
+{
+    // Tile using a 2D grid
+    int warpM = blockIdx.x; //(blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    int warpN = blockIdx.y;
+    
+    // Declare the fragments
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> a_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
+
+    // Initialize the output to zero
+    nvcuda::wmma::fill_fragment(c_frag, 0.0f);
+
+    // Loop over A_n_cols
+    for (int i = 0; i < A_n_cols; i += WMMA_K) {
+        //.
+        //.
+        //.
+
+    }
+}
+```
+
+All threads in a warp work together to load the tiles to be computed by tensor cores. All we need to do is point the warp towards the top left element of the tile. We have already defined the size of fragments, so the appropriate tiles will get loaded for the tensor cores using `nvcuda::wmma::load_matrix_sync()`. Once the tiles are loaded, matrix multiplication using tensor cores is just a single line away using `nvcuda::wmma::mma_sync()`.
+
+```cuda
+__global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols) 
+{
+    // Tile using a 2D grid
+    int warpM = blockIdx.x; //(blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    int warpN = blockIdx.y;
+    
+    // Declare the fragments
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> a_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
+
+    // Initialize the output to zero
+    nvcuda::wmma::fill_fragment(c_frag, 0.0f);
+
+    // Loop over A_n_cols
+    for (int i = 0; i < A_n_cols; i += WMMA_K) {
+        int aRow = warpM * WMMA_M;
+        int aCol = i;
+        int bRow = i;
+        int bCol = warpN * WMMA_N;
+
+        // Load the inputs
+        nvcuda::wmma::load_matrix_sync(a_frag, &d_A_ptr[aRow * A_n_cols + aCol], A_n_cols);
+        nvcuda::wmma::load_matrix_sync(b_frag, &d_B_ptr[bRow * C_n_cols + bCol], C_n_cols);
+
+        // Perform the matrix multiplication (c_frag = a_frag*b_frag + c_frag)
+        nvcuda::wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+
+    }
+
+    //.
+    //.
+    //.
+}
+```
+
+Once we have the final result in the output fragment, it can be put back into the global memory similarly. CUDA provides convenient ways to work with tensor cores, which is a big reason for NVIDIA's success.
+
+```cuda
+__global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols) 
+{
+    // Tile using a 2D grid
+    int warpM = blockIdx.x; //(blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    int warpN = blockIdx.y;
+    
+    // Declare the fragments
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> a_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, nvcuda::wmma::row_major> b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> c_frag;
+
+    // Initialize the output to zero
+    nvcuda::wmma::fill_fragment(c_frag, 0.0f);
+
+    // Loop over A_n_cols
+    for (int i = 0; i < A_n_cols; i += WMMA_K) {
+        int aRow = warpM * WMMA_M;
+        int aCol = i;
+        int bRow = i;
+        int bCol = warpN * WMMA_N;
+
+        // Load the inputs
+        nvcuda::wmma::load_matrix_sync(a_frag, &d_A_ptr[aRow * A_n_cols + aCol], A_n_cols);
+        nvcuda::wmma::load_matrix_sync(b_frag, &d_B_ptr[bRow * C_n_cols + bCol], C_n_cols);
+
+        // Perform the matrix multiplication
+        nvcuda::wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+    }
+
+    // Store the output
+    int cRow = warpM * WMMA_M;
+    int cCol = warpN * WMMA_N;
+    nvcuda::wmma::store_matrix_sync(&d_C_ptr[cRow * C_n_cols + cCol], c_frag, C_n_cols, nvcuda::wmma::mem_row_major);
+}
+```
