@@ -1,0 +1,133 @@
+---
+layout: post
+comments: false
+title:  "xGeMM: GPU Accelerated Matrix Multiplication (almost) like cuBLAS"
+excerpt: "Programming general matrix multiplication from scratch in CUDA."
+date:   2024-11-20 10:00:00
+---
+
+## Introduction
+I will show you two plots side by side. Figure 1 shows the Google Trends graph for interest in AI, and Figure 2 shows the stock chart on NVIDIA's website. 
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-20-xGeMM/Fig1.png">
+<div class="thecap">Figure 1: Google Trends showing the interest in AI</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-20-xGeMM/Fig2.png">
+<div class="thecap">Figure 2: NVIDIA Stock Chart (as of September 2024)</div>
+</div>
+
+It is no coincidence that as the interest in AI rose, so did the NVIDIA stock value. In the last 10 years or so, the field of AI has been dominated by algorithms using neural networks at their heart. And, at the heart of neural nets, there's matrix multiplication. Over 90% of the neural net's compute cost comes from several matrix multiplications done one after the other$$^[1](https://www.quantamagazine.org/ai-reveals-new-possibilities-in-matrix-multiplication-20221123/)$$. 
+
+But why does NVIDIA benefit from this? Anyone can do matrix multiplication. I can write it myself in under 15 lines of C++ code.
+
+```c++
+void matrix_multiplication(float *A_mat, float *B_mat, float *C_mat, int n)
+{
+    for (int row = 0; row < n; row++)
+    {
+        for (int col = 0; col < n; col++)
+        {
+            float val = 0.0f;
+            for (int k = 0; k < n; k++)
+            {
+                val += A_mat[row*n + k] * B_mat[k*n + col];
+            }
+            C_mat[row*n + col] = val;
+        }
+    }
+}
+```
+
+Even better, I can use an open-source library like Eigen.
+
+```c++
+#include <Eigen/Dense>
+
+int main(int argc, char const *argv[])
+{
+    // .
+    // .
+    // .
+    
+    // Generate Eigen square matrices A, B and C
+    // .
+    // .
+    // .
+    
+    // Perform matrix multiplication: C = A * B 
+    C_eigen = A_eigen * B_eigen;
+
+    // .
+    // .
+    // .
+
+    return 0;
+}
+```
+
+However, when performing matrix multiplication on large matrices, which is common in modern neural networks, the computational time becomes prohibitively long. The duration of a single matrix multiplication operation can be so extensive that it becomes impractical to build large neural networks using these libraries.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-20-xGeMM/Fig4.png">
+<div class="thecap">Figure 3: Naive CPU implementation vs Eigen implementation</div>
+</div>
+
+Where NVIDIA shines is that it has developed a GPU-accelerated library called cuBLAS (that runs only on NVIDIA GPUs) and has a function called SGeMM (Single Precision General Matrix Multiplication) that can do the same thing extremely fast.
+
+```cuda
+#include <cublas_v2.h>
+
+int main(int argc, char const *argv[])
+{
+    // .
+    // .
+    // .
+
+    // Generate square matrices d_A, d_B and d_C
+    // .
+    // .
+    // .
+    
+    // Perform matrix multiplication: d_C = alpha*(d_A * d_B) + beta*d_C
+    float alpha = 1;
+    float beta = 0;
+    cublasSgemm(handle,
+                CUBLAS_OP_N, CUBLAS_OP_N,
+                n, n, n, // Num Cols of C, Num rows of C, Shared dim of A and B
+                &alpha,
+                d_B, n, // Num cols of B
+                d_A, n, // Num cols of A
+                &beta,
+                d_C, n // Num cols of C
+              ); 
+
+    // .
+    // .
+    // .
+
+    return 0;
+}
+```
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-20-xGeMM/Fig5.png">
+<div class="thecap">Figure 4: Naive CPU vs Eigen vs cuBLAS</div>
+</div>
+
+NVIDIA GPUs are the main reason for this speed-up. Whenever we write standard code in high-level programming languages like C++, by default, it runs sequentially on the CPU. We can exploit some level of parallelism from CPUs (that's what Eigen does), but GPUs are built specifically for parallel computing. NVIDIA provides CUDA (Compute Unified Device Architecture), allowing software to use GPUs for accelerated general-purpose processing. 
+
+> At first glance, 2.18 seconds might not look that bad. However, you have to understand that while training a neural network, matrix multiplication is performed millions of times. So even if we (very conservatively) assume 10 million matrix multiplications, it will take around 252 days to finish this on a CPU (using Eigen). While, on GPU that can be done in around 2 hours!
+
+My goal with this mini project is to code general matrix multiplication from scratch in CUDA C++ and (try to) get as close as possible to the cuBLAS SGEMM implementation. I will do this step by step (keeping the code base as simple as possible) and, along the way, discuss:
+1. CUDA API functions and how to use them.
+2. NVIDIA GPU hardware, including CUDA cores and various memory units.
+3. Several parallel GPU programming concepts like:
+    - Global memory coalescing
+    - 2D block tiling
+    - 1D and 2D thread tiling
+    - Vectorized memory accesses
+
+## What is SGeMM
