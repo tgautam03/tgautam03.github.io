@@ -5,3 +5,11 @@ title:  "xGeMM Chapter 2: GPU Global Memory Coalescing"
 excerpt: "Explaining memory coalescing in GPUs."
 date:   2024-11-22 10:00:00
 ---
+
+
+## References
+- YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
+- Code repository for this blog: [xGeMM](https://github.com/tgautam03/xGeMM)
+
+- Previous blog in this series: [xGeMM Chapter 1: Getting Started with CUDA Programming](https://tgautam03.github.io/2024/11/21/xGeMM_Ch1/)
+- Next blog in this series: [xGeMM Chapter 3: GPU Shared Memory](https://tgautam03.github.io/2024/11/23/xGeMM_Ch3/)

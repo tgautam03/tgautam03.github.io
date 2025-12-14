@@ -371,4 +371,4 @@ void naive_xgemm(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, i
 - Code repository for this blog: [xGeMM](https://github.com/tgautam03/xGeMM)
 
 - Previous blog in this series: [xGeMM: GPU Accelerated Matrix Multiplication (almost) like cuBLAS](https://tgautam03.github.io/2024/11/20/xGeMM/)
-- Next blog in this series: []()
+- Next blog in this series: [xGeMM Chapter 2: GPU Global Memory Coalescing](https://tgautam03.github.io/2024/11/22/xGeMM_Ch2/)

@@ -5,3 +5,10 @@ title:  "xGeMM Chapter 5: 2D Thread Coarsening using GPU Registers"
 excerpt: "Explaining 2D thread coarsening using GPU registers."
 date:   2024-11-25 10:00:00
 ---
+
+## References
+- YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
+- Code repository for this blog: [xGeMM](https://github.com/tgautam03/xGeMM)
+
+- Previous blog in this series: [xGeMM Chapter 4: 1D Thread Coarsening using GPU Registers](https://tgautam03.github.io/2024/11/24/xGeMM_Ch4/)
+- Next blog in this series: [xGeMM Chapter 6: Vectorized Memory Accesses](https://tgautam03.github.io/2024/11/26/xGeMM_Ch6/)
