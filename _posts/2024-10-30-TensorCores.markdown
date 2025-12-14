@@ -42,5 +42,7 @@ Technically speaking, tensor cores perform matrix multiplication and accumulatio
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-10-30-TensorCores/Figure_3.png">
-<div class="thecap">Figure 3: Tensor cores multiplication and accumulation (source: [NVIDIA](https://developer.nvidia.com/blog/programming-tensor-cores-cuda-9/))</div>
+<div class="thecap">Figure 3: Tensor cores multiplication and accumulation (source: NVIDIA)</div>
 </div>
+
+There are other options that you can find in the [NVIDIA documentation](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#element-types-and-matrix-sizes) and moving forward, I will be working with $$16 \times 16$$ matrix dimensions. For an arbitrary matrix size, I must pad the matrices (with zeros) such that they are a multiple of 16 and then perform matrix multiplication using multiple $$16 \times 16$$ tiles. When working with tensor cores, a big difference (compared to CUDA cores) is that they work on the warp level. This means all threads in a warp (32 threads) cooperate to perform one set of $$16 \times 16$$ matrix multiplication and accumulation. 
