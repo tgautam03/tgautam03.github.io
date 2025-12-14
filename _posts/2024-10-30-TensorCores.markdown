@@ -36,3 +36,11 @@ The bit (binary digit) is the smallest and most fundamental digital information 
 </div>
 
 A step further, we have half-precision (2 Bytes) floating point numbers. These are not natively supported in standard C++. However, CUDA has an option to use half-precision (declared as `half`) and this is where tensor cores operate. 
+
+## Tensor Cores Programming
+Technically speaking, tensor cores perform matrix multiplication and accumulation, i.e., $$\bf{D} = \bf{A} \cdot \bf{B} + \bf{C}$$. However, we can initialize $$\bf{C}$$ to zeros and get matrix multiplication. When working with tensor cores, the hardware is designed specially so that the input matrices are generally half-precision (FP16) and the output is single-precision (FP32). Tensor cores are restricted to certain matrix dimensions, and Figure 3 shows an example of $$4 \times 4$$ inputs and outputs.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-10-30-TensorCores/Figure_3.png">
+<div class="thecap">Figure 3: Tensor cores multiplication and accumulation (source: [NVIDIA](https://developer.nvidia.com/blog/programming-tensor-cores-cuda-9/))</div>
+</div>
