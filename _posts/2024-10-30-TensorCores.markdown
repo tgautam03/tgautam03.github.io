@@ -223,7 +223,7 @@ __global__ void naive_tensor_mat_mul_kernel(half *d_A_ptr, half *d_B_ptr, float 
 ```
 
 ## Why GFLOPS?
-Execution time is a perfectly fine metric to analyze the performance of a program. However, a better option is to look at the number of operations performed per second by the function or Giga Floating-Point Operations per Second (GFLOPS). When multiplying two $$M \times \K$$ and $$K \times N$$ matrices, each output matrix element requires approximately $$K$$ multiplications and $$K$$ additions, i.e., $$2K$$ operations. As there are total $$M \times N$$ output elements, the total number of operations is $$2 \times M \times N \times K$$. Dividing this number by the time it took to perform matrix multiplication gives FLOPS for the implemented algorithm (that can be converted to GFLOPS).
+Execution time is a perfectly fine metric to analyze the performance of a program. However, a better option is to look at the number of operations performed per second by the function or Giga Floating-Point Operations per Second (GFLOPS). When multiplying two $$M \times K$$ and $$K \times N$$ matrices, each output matrix element requires approximately $$K$$ multiplications and $$K$$ additions, i.e., $$2K$$ operations. As there are total $$M \times N$$ output elements, the total number of operations is $$2 \times M \times N \times K$$. Dividing this number by the time it took to perform matrix multiplication gives FLOPS for the implemented algorithm (that can be converted to GFLOPS).
 
 ## Benchmark
 Figure 6 shows the GFLOPS for the tiled version that uses CUDA cores against the naive version that uses tensor cores. The jump in performance is massive (especially for large matrices)! 
