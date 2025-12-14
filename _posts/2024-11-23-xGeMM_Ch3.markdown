@@ -5,6 +5,64 @@ title:  "xGeMM Chapter 3: GPU Shared Memory"
 excerpt: "Explaining shared memory in GPUs."
 date:   2024-11-23 10:00:00
 ---
+## Introduction
+Figure 1 shows the performance of the kernel with coalesced memory accesses against cuBLAS SGEMM. For $$128 \times 128$$ matrices, the performance is very close. As the matrix size increases, the gap between cuBLAS and our code increases drastically.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig1.png">
+<div class="thecap">Figure 1: cuBLAS vs Coaleased</div>
+</div>
+
+The main difference between matrix multiplication involving $$128 \times 128$$ matrices and $$4096 \times 4096$$ matrices is the amount of data accessed from global memory. As the global memory has long latency and low bandwidth, we need to find a way to reduce global memory accesses or in other words, perform more operations per byte of data accessed from global memory. We need a deeper understanding of the GPU memory hierarchy to do this.
+
+## GPU Memory Hierarchy
+We already know that GPU is organized as an array of SMs. Programmers never interact with SMs directly. Instead, they use programming constructs like thread and thread blocks to interface with the hardware. When multiple blocks are assigned to an SM, the on-chip memory is divided amongst these blocks hierarchically (see Figure 2). Let's now look at the on-chip memory in more detail.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig2.png">
+<div class="thecap">Figure 2: SMs, Thread Blocks and GPU Memory Hierarchy</div>
+</div>
+
+On-chip memory units reside near the cores. Hence, data access from on-chip memory is blazing fast. The issue in this case is that the size of these memory units is very small (maximum of ~16KB per SM). We can manage two main types of on-chip memory units with code:
+1. **Shared Memory**: Shared memory is a small memory space (~16KB per SM) that resides on-chip and has a short latency with high bandwidth. On a software level, it can only be written and read by the threads within a block.
+2. **Registers**: Registers are extremely small (~8KB per SM) and extremely fast memory units that reside on-chip. On a software level, it can be written and read by an individual thread (i.e., private to each thread).
+
+> This is in stark contrast to global memory that all threads can access!
+
+To avoid multiple global memory accesses, we can partition the data into subsets called tiles so each tile fits into the shared memory and performs multiple operations on this data. Accessing data from shared memory is fast. This should give a substantial speed up. However, there are two things that we need to keep in mind:
+1. Shared memory is small, so we can only move very small subsets of data to and from shared memory (one at a time).
+2. The correctness of the algorithm should not be affected by this strategy.
+
+## Tiled Matrix Multiplication
+For simplicity, consider a matrix multiplication involving matrices of size 4. To facilitate parallel computations, let's define a $$2 \times 2$$ grid (i.e., 2 blocks each in $$x$$ and $$y$$) and $$2 \times 2$$ blocks (i.e., 2 threads each in $$x$$ and $$y$$). Figure 3 shows the computations involving all the blocks in the grid.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig3.png">
+<div class="thecap">Figure 3: 4x4 matrix multiplication involving 2x2 blocks and 2x2 grid</div>
+</div>
+
+
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig4.png">
+<div class="thecap">Figure 4: Threads and global memory accesses</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig5.gif">
+<div class="thecap">Figure 5: Loading tiles into shared memory and performing matrix multiplication in multiple phases</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig6.png">
+<div class="thecap">Figure 6: Threads and global memory accesses using shared memory</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig7.png">
+<div class="thecap">Figure 7: cuBLAS vs Coaleased vs Shared Memory</div>
+</div>
+
 
 ## References
 - YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
