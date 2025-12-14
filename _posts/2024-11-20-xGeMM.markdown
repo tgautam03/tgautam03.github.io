@@ -135,10 +135,25 @@ SGeMM stands for Single-Precision General Matrix Multiplication. A matrix is a r
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-20-xGeMM/Fig6.png">
-<div class="thecap">Figure 5: A matrix of size $m \times n$</div>
+<div class="thecap">Figure 5: A matrix of size m x n</div>
 </div>
 
 General matrix multiplication is a fundamental operation in linear algebra with specific rules and properties. Matrix multiplication is defined for two matrices $$\bf{A}$$ and $$\bf{B}$$ only when the number of columns in $$\bf{A}$$ is equal to the number of rows in $$\bf{B}$$, i.e., if:
 - $$\bf{A}$$ is an $$M \times K$$ matrix
 - $$\bf{B}$$ is a $$K \times N$$ matrix
 - Then, their product $$\bf{AB}$$ is an $$M \times N$$ matrix.
+
+To multiply matrices $$\bf{A}$$ and $$\bf{B}$$:
+1. Take each row of $$\bf{A}$$ and perform element-wise multiplication with each column of $$\bf{B}$$.
+2. The resulting elements are the sum of these multiplications.
+
+Mathematically, this is expressed as: 
+$$\textbf{AB}_{ij} = \sum_{k=0}^{K-1} \textbf{A}_{i,k} \cdot \textbf{B}_{k,j}$$
+​Where $$\textbf{AB}_{ij}$$ is the element in the i-th row and j-th column of the resulting matrix.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-20-xGeMM/Fig7.png">
+<div class="thecap">Figure 6: Matrix multiplication</div>
+</div>
+
+> Figure 6 shows how an element of the output matrix is computed using a row and a column from input matrices. The same thing is done for all the other elements, and only the row and column from the input matrices change.
