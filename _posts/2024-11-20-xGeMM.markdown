@@ -19,7 +19,7 @@ I will show you two plots side by side. Figure 1 shows the Google Trends graph f
 <div class="thecap">Figure 2: NVIDIA Stock Chart (as of September 2024)</div>
 </div>
 
-It is no coincidence that as the interest in AI rose, so did the NVIDIA stock value. In the last 10 years or so, the field of AI has been dominated by algorithms using neural networks at their heart. And, at the heart of neural nets, there's matrix multiplication. Over 90% of the neural net's compute cost comes from several matrix multiplications done one after the other$$^[1](https://www.quantamagazine.org/ai-reveals-new-possibilities-in-matrix-multiplication-20221123/)$$. 
+It is no coincidence that as the interest in AI rose, so did the NVIDIA stock value. In the last 10 years or so, the field of AI has been dominated by algorithms using neural networks at their heart. And, at the heart of neural nets, there's matrix multiplication. Over 90% of the neural net's compute cost comes from several matrix multiplications done one after the other. 
 
 But why does NVIDIA benefit from this? Anyone can do matrix multiplication. I can write it myself in under 15 lines of C++ code.
 
@@ -135,6 +135,10 @@ SGeMM stands for Single-Precision General Matrix Multiplication. A matrix is a r
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-20-xGeMM/Fig6.png">
-<div class="thecap">Figure 5: A matrix of size $$m \times n$$</div>
+<div class="thecap">Figure 5: A matrix of size $m \times n$</div>
 </div>
 
+General matrix multiplication is a fundamental operation in linear algebra with specific rules and properties. Matrix multiplication is defined for two matrices $$\bf{A}$$ and $$\bf{B}$$ only when the number of columns in $$\bf{A}$$ is equal to the number of rows in $$\bf{B}$$, i.e., if:
+- $$\bf{A}$$ is an $$M \times K$$ matrix
+- $$\bf{B}$$ is a $$K \times N$$ matrix
+- Then, their product $$\bf{AB}$$ is an $$M \times N$$ matrix.
