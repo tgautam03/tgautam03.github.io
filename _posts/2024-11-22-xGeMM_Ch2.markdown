@@ -5,7 +5,200 @@ title:  "xGeMM Chapter 2: GPU Global Memory Coalescing"
 excerpt: "Explaining memory coalescing in GPUs."
 date:   2024-11-22 10:00:00
 ---
+## Introduction
+Looking at the GFLOPS from our kernel function and cuBLAS SGEMM (Figure 1), there are two main questions:
+1. Why are GFLOPS increasing with matrix sizes?
+2. How can we improve the performance of our kernel function?
 
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig1.png">
+<div class="thecap">Figure 1: cuBLAS vs My Code</div>
+</div>
+
+To answer these questions, we need to understand the GPU hardware better.
+
+## Modern GPU Architecture
+Figure 2 shows a high-level CUDA C programmer's view of a CUDA-capable GPU's architecture. There are four key features in this architecture:
+- The GPU is organized into an array of highly threaded streaming multiprocessors (SMs). 
+- Each SM has several processing units called streaming processors or CUDA cores (shown as green tiles inside SMs) that share control logic.
+- The SMs also contain a different on-chip memory shared amongst the CUDA cores inside the SM. 
+- GPU also has a much larger off-chip memory, the main component of which is the global memory or VRAM.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig2.png">
+<div class="thecap">Figure 2: Architecture of a CUDA-capable GPU</div>
+</div>
+
+There are two main takeaways from Figure 2:
+- CUDA cores in different SMs can't interact with each other or access memory from other SMs.
+- The global memory is off-chip (i.e., some distance away from the cores), so it has long latency and low bandwidth.
+
+> Latency is the time it takes for data to travel from one point to another, usually measured in milliseconds (ms). Bandwidth is the maximum amount of data that can be sent and received in a given time, usually measured in Mbps or Gbps.
+
+## Thread Blocks and SMs
+When a kernel is called, the CUDA runtime system launches a grid of threads that execute the same kernel code. These threads are assigned to SMs on a block-by-block basis, i.e., all threads in a block are simultaneously assigned to the same SM. For the matrix multiplication example, multiple blocks will likely get simultaneously assigned to the same SM. 
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig3.png">
+<div class="thecap">Figure 3: SMs and CUDA Thread Blocks</div>
+</div>
+
+The example discussed in Figure 3 is quite small. In real-world problems, there are a lot more blocks, and to ensure that all blocks get executed, the runtime system maintains a list of blocks that did not get assigned to any SM and assigns these new blocks to SMs when previously assigned blocks complete execution. This block-by-block assignment of threads guarantees that threads in the same block are executed simultaneously on the same SM, which makes interaction between threads in the same block possible.
+
+For a moment, it might look like an odd choice not to let threads in different blocks interact with each other. However, this feature allows different blocks to run independently in any order, resulting in transparent scalability where the same code can run on different hardware with different execution resources. This, in turn, reduces the burden on software developers and ensures that with new generations of hardware, the application will speed up consistently without errors.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig4.png">
+<div class="thecap">Figure 4: A Smaller GPU (on the left) can only run 2 blocks concurrently, while a larger GPU (on the right) can run 4 blocks concurrently (Source: Book titled "Programming Massively Parallel Processors")</div>
+</div>
+
+## Warps
+In the previous blog, I explained that blocks can execute in any order relative to each other, but I did not say anything about how threads inside each block are executed. Conceptually, the programmer should assume that threads in a block can execute in any order, and the correctness of the algorithm should not depend on the order in which threads are executed. 
+
+Thread scheduling in CUDA GPUs is a hardware implementation concept that varies depending on the type of hardware used. In most implementations, once a block is assigned to an SM, it is divided into 32-thread units called warps. The knowledge of warps is useful for understanding and optimizing the performance of CUDA applications.
+
+> Warp size can be different for future hardware generations!
+
+Each warp consists of 32 consecutive threads. For 1D block, this is straightforward such that `threadIdx.x` is used to divide the threads into warps.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig5.png">
+<div class="thecap">Figure 5: Warps in 1D blocks</div>
+</div>
+
+> If the number of threads in a block is not a multiple of 32, the last warp gets padded with inactive threads to fill up the remaining thread positions.
+
+For the 2D block, threads are linearized using a row-major layout and partitioned into warps like the 1D case. For the 3D block, the $$z$$ dimension is folded into the $$y$$ dimension, and the resulting thread layout is treated as the 2D case.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig6.png">
+<div class="thecap">Figure 6: Warps in 2D and 3D blocks</div>
+</div>
+
+An SM is designed to execute all threads in a warp following the SIMD model, i.e., at any instance in time, one instruction is fetched and executed for all threads in the warp. As one instruction is shared across multiple execution units, it allows for a small percentage of the hardware to be dedicated to control, and a large percentage is dedicated to increasing the arithmetic throughput (i.e., cores).
+
+## Kernel Function
+There are three main steps to running a program on the GPU:
+1. Copy data from host memory to device global memory.
+2. Perform computations using the device cores and the data stored in global memory.
+3. Copy results from global memory to host memory.
+
+We can't do much about steps 1 and 3 as we have to move data between host and device memory. To be honest, this is computationally intensive, but again, it's a one-time thing, and with large data, we can offset the cost with gains from solving the problem in parallel. So, my focus here is to analyze the kernel function.
+
+As a recap, the algorithm for parallel matrix multiplication involving matrix $$\bf{A}$$ of size $$(M \times K)$$ and $$\bf{B}$$ of size $$(K \times N)$$ is as follows:
+1. $$M \cdot N$$ threads are generated on the GPU (one to compute each element of the matrix $$C$$, which is of size $$M \times N$$).
+2. Each thread:
+    - Retrieves a row of matrix $$A$$ and a column of matrix $$\bf{B}$$ from the device memory. This results in ##2 \times 4K$$ Bytes being copied from the device's global memory.
+    - Loops over the elements.
+    - Multiplies the two numbers and adds the result to the total stored in the device's global memory. This results in 4 Bytes being copied to the device memory.
+
+For all $$M \times N$$ threads, we are accessing $$M \times N \times (2 \times 4K + 4)$$ Bytes. If we have $$4096 \times 4096$$ matrices, the accesses from global memory amount to 512 GB! I'm focusing so much on these memory accesses because global memory has long latency and low bandwidth, which is usually a major bottleneck for most applications.
+
+## Answering the Questions
+### Why does GFLOPS increase with increasing Matrix Size?
+From the knowledge of the GPU hardware (that we have acquired so far), the loss in performance for matrix multiplication with small matrix sizes (Figure 1) is mostly due to the global memory accesses. However, this does not explain why GFLOPS increases with the increase in the matrix size. I mean that with large matrices, the number of global memory accesses also increases, but the performance increases counterintuitively! GPUs can do this because of the hardware latency tolerance or latency hiding.
+
+There are usually more threads assigned to an SM than its cores. This is done so that GPUs can tolerate long-latency operations (like global memory accesses). With enough warps, SM can find a warp to execute while others are waiting for long-latency operations (like getting data from global memory). Filling the latency time of operations from some threads with work from others is called latency tolerance or latency hiding. The selection of warps ready for execution does not introduce any computational cost because GPU hardware is designed to facilitate zero-overhead thread scheduling.
+
+> This context-switching can also be done with CPU threads. In CPUs, before switching to a different thread, the current execution state is moved from registers to memory and later loaded back to registers (from memory). This saving and restoring contents in a CPU can incur significant overhead.
+
+> GPUs perform context switching differently, such that the execution state is held in place (inside thread registers). The ability to tolerate such long latency operations is why GPUs have smaller cache memories and control logic but way more registers. Another distinction from CPU is that GPU registers are not designed to store data but act as a staging area for threads.
+
+That's why, for large matrices, more warps are available to hide the latency due to global memory accesses. There is a limit (set by CUDA) to the number of warps that can be assigned to an SM. However, it's impossible to assign an SM with the maximum number of warps it supports because of constraints on execution resources (like on-chip memory) in an SM. The resources are dynamically partitioned such that SMs can execute many blocks with few threads or a few blocks with many threads. 
+
+For example, an Ampere A100 GPU can support 32 blocks per SM, 64 warps (2048 threads) per SM, and 1024 threads per block
+
+So, if
+
+1. A grid is launched with 1024 threads in a block (maximum allowed)
+
+Ans. Each SM can accommodate 2 blocks (with 2048 threads total, matching the maximum allowed per SM).
+
+2. A grid is launched with 512 threads in a block
+
+Ans. Each SM can accommodate 4 blocks (with 2048 threads total, matching the maximum allowed per SM).
+
+3. A grid is launched with 256 threads in a block
+
+Ans. Each SM can accommodate 8 blocks (with 2048 threads total, matching the maximum allowed per SM).
+
+4. A grid is launched with 64 threads in a block
+
+Ans. Each SM can accommodate 32 blocks (with 2048 threads total, matching the maximum allowed per SM).
+
+> The ratio of the number of warps assigned to an SM to the maximum number it supports is known as occupancy.
+
+A negative situation might arise when the maximum number of threads allowed per block is not divisible by the block size. For example, we know that an Ampere A100 GPU can support 2048 threads per SM
+
+So, if
+
+1. A grid is launched with 700 threads in a block
+
+Ans. SM can hold only 2 blocks (totaling 1400 threads), and the remaining 648 thread slots are not utilized. The occupancy in this case is 1400 (assigned threads) / 2048 (maximum threads) = 68.35%.
+
+### How to improve Kernel Performance?
+For large matrices, there will be enough threads assigned to each SM such that the hardware can get around the issue of global memory latency. To improve the kernel performance, we must make efficiently accessing data from global memory a top priority.
+
+To effectively utilize the global memory bandwidth, we must understand a few things about the architecture of the global memory. Global memory in CUDA devices is implemented using DRAM (Dynamic Random Access Memory) technology, which usually takes tens of nanoseconds to access a data byte. This starkly contrasts modern computing devices with sub-nanosecond per byte access speed. As the DRAM access speed is relatively slow, parallelism is used to increase the rate of data access (also known as memory access throughput).
+
+Each time a DRAM location is accessed, a range of consecutive locations are also accessed in parallel. These consecutive location accesses and delivery are known as DRAM bursts. Current CUDA devices employ a technique that takes advantage of the fact that threads in a warp execute the same instruction at any given time. When all threads in a warp execute a load instruction, the hardware detects whether the memory accesses are consecutive. If they are consecutive, much data can be transferred in parallel faster. In short, all threads in a warp must access consecutive global memory locations for optimum performance (this is known as coalesced access).
+
+Figure 7 shows the pictorial analysis of the thread-to-element mapping. It's worth noting that the consecutive threads of the warp are mapped to the columns of the output matrix. This means that each thread accesses the same column of matrix $$\bf{B}$$ and consecutive rows of matrix $$\bf{A}$$. For any iteration $$k$$, threads in this warp access the elements of matrix $$\bf{A}$$, which are $$N$$ elements apart in the memory (remember that the 2D matrix is stored in a row-major layout in memory). As the threads in a warp do not access the consecutive elements in the memory, DRAM can not transfer these in parallel, requiring a separate load cycle for each element (Figure 8)! 
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig7.png">
+<div class="thecap">Figure 7: Uncoalesced thread to element mapping</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig8.png">
+<div class="thecap">Figure 8: Uncoalesced memory accesses</div>
+</div>
+
+The solution to this problem is very simple. All we need to do is ensure that the threads in a warp are accessing consecutive elements of $$\bf{A}$$. Figure 9 shows the thread-to-element mapping for coalesced memory accesses. In this case, consecutive threads in the warp are responsible for computing elements along the rows of matrix $$\bf{C}$$. This means that each thread accesses the same row of matrix $$\bf{A}$$ and consecutive columns of matrix $$\bf{B}$$. For any iteration $$k$$, threads in this warp access the consecutive elements of matrix $$\bf{B}$$. That means all the elements will be transferred parallel at much higher speeds (Figure 10).
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig9.png">
+<div class="thecap">Figure 9: Coalesced thread to element mapping</div>
+</div>
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig10.png">
+<div class="thecap">Figure 10: Coalesced memory accesses</div>
+</div>
+
+Modifying the kernel function is just as simple. All we need to do is change thread-to-element mapping such that the thread's $$x$$ index aligns with the column index of matrix $$\bf{C}$$ and $$y$$ with the row index of matrix $$\bf{C}$$.
+
+```cuda
+__global__ void coalesced_mat_mul_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+    // Working on C[row,col]
+    const int col = blockDim.x*blockIdx.x + threadIdx.x;
+    const int row = blockDim.y*blockIdx.y + threadIdx.y;
+
+    // Parallel mat mul
+    if (row < C_n_rows && col < C_n_cols)
+    {
+        // Value at C[row,col]
+        float value = 0;
+        for (int k = 0; k < A_n_cols; k++)
+        {
+            value += d_A_ptr[row*A_n_cols + k] * d_B_ptr[k*C_n_cols + col];
+        }
+
+        // Assigning calculated value (SGEMM is C = α*(A @ B)+β*C and in this repo α=1, β=0)
+        d_C_ptr[row*C_n_cols + col] = 1*value + 0*d_C_ptr[row*C_n_cols + col];
+    }
+}
+```
+
+## Benchmark
+Figure 11 shows the GFLOPS for the coalesced and uncoalesced code against NVIDIA's SGEMM implementation. As we saw earlier, the uncoalesced version achieved 1% of what cuBLAS can do for large matrices. With coalesced memory accesses, the kernel is at 9% of cuBLAS (a big jump from earlier but still insufficient). Interestingly, our code is almost on a level with cuBLAS for smaller matrices (i.e., $$128 \times 128$$), and the gap widens as the matrix size increases. This is a clue that will help us improve the performance of our code further.
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-22-xGeMM_Ch2/Fig11.png">
+<div class="thecap">Figure 11: cuBLAS vs Coaleased vs Uncoalesced</div>
+</div>
 
 ## References
 - YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
