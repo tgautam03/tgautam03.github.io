@@ -6,6 +6,237 @@ excerpt: "Explaining 1D thread coarsening using GPU registers."
 date:   2024-11-24 10:00:00
 ---
 
+## Introduction
+I want to start this post by briefly analyzing the kernel ifrom the previous blog post (keeping actual hardware in mind). Compiling the code with flags `--ptxas-options=-v` outputs that we are using 8192 bytes (8 KB) of shared memory. As I am using $$32 \times 32$$ blocks, there are 1024 threads per block. Below are the specifications for the RTX 3090:
+- Max Threads per Block: 1024
+- Max Threads per SM: 1536
+- Max Shared Memory per Block: 48 KB
+- Max Shared Memory per SM: 100 KB
+
+As the whole block gets assigned to an SM, the program runs on the hardware as follows:
+1. Shared memory: We are using 8 KB per Block + 1 KB per Block for CUDA runtime usage, resulting in a total of 9 KB per Block.
+2. Threads: We use 1024 Threads per Block, and a maximum of 1536 threads per SM is supported.
+
+This means that our code is running 1 block per SM in parallel at a time. So, in short, a larger portion of the calculations run in sequence. Wouldn't it be better if:
+1. We manually serialize a portion of the code. This way we can avoid the cost of letting hardware handle it automatically and ensure that more blocks get assigned to an SM. 
+2. Even though shared memory accesses are not that costly (compared to global memory), can we still reduce the number of shared memory accesses to make the code even faster? 
+
+We can achieve both these goals by using a thread to compute multiple elements of the output matrix $$\bf{C}$$ and utilize registers wisely (such that memory accesses are even faster). 
+
+## 1D Thread Coarsening
+The strategy here is to use a thread to compute multiple elements along the column of the output matrix $$\bf{C}$$. Consider a simple $$4 \times 4$$ matrix multiplication. To solve this in parallel, let's define a $$1 \times 1$$ grid (i.e., 1 block only) and $$1 \times 8$$ block (i.e., 1D block with 8 threads in $$x$$ direction). Even though the block is 1D, we can still distribute the threads to cover the 2D space (see Figure 1).
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-24-xGeMM_Ch4/Fig1.png">
+<div class="thecap">Figure 1: 1 thread computing 2 elements of C along the column</div>
+</div>
+
+As before, we load the tiles of matrix $$\bf{A}$$ and $$\bf{B}$$ into shared memory (in multiple phases). The difference is that a tile of $$\bf{A}$$ is $$4 \times 2$$, and a tile of $$\bf{B}$$ is $$2 \times 4$$. We still need a $$4 \times 4$$ output but have just 8 threads. Using a 1D block, we can redistribute the threads along $$4 \times 2$$ and $$2 \times 4$$ dimensions, ensuring coalesced global memory accesses (see Figure 2).
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-24-xGeMM_Ch4/Fig2.gif">
+<div class="thecap">Figure 2: Loading tiles into shared memory</div>
+</div>
+
+Once the tiles are in the shared memory, the kernel in the previous blog post performs standard matrix multiplication on these tiles. However, in this kernel, 1 thread computes 2 elements. So, we can use registers and store some data to reduce shared memory accesses (remember, the register is private to a thread, so this was not possible in the previous kernels). We will create another loop (call this `k`) inside each phase. This loop `k` will retrieve an element of $$\bf{B}$$ along the column and store it in a register. Then, a final loop (call this `c`) calculates the 2 elements of $$\bf{C}$$ assigned to the thread using the required elements of $$\bf{A}$$. Figure 3 shows the process for Phase 0 (the same thing is done in Phase 1, but with different matrix tiles).
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-24-xGeMM_Ch4/Fig3.gif">
+<div class="thecap">Figure 3: Moving elements of B into thread registers</div>
+</div>
+
+This might look a bit overwhelming, but just consider elements calculated by `thread[0,0]`, i.e., `C[0,0]` and `C[1,0]`:
+
+**Tiled Version with No Registers**
+
+$$C[0,0]= \overbrace{\overbrace{A[0,0] \cdot B[0,0]}^{k_{phase}=0} + \overbrace{A[0,1] \cdot B[1,0]}^{k_{phase}=1}}^{phase=0} + \overbrace{\overbrace{A[0,2] \cdot B[2,0]}^{k_{phase}=0} + \overbrace{A[0,3] \cdot B[3,0]}^{k_{phase}=1}}^{phase=1}$$
+
+$$C[1,0]= \underbrace{\underbrace{A[1,0] \cdot B[0,0]}_{k_{phase}=0} + \underbrace{A[1,1] \cdot B[1,0]}_{k_{phase}=1}}_{phase=0} + \underbrace{\underbrace{A[1,2] \cdot B[2,0]}_{k_{phase}=0} + \underbrace{A[1,3] \cdot B[3,0]}_{k_{phase}=1}}_{phase=1}$$
+
+**Tiled Version with Registers**
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-24-xGeMM_Ch4/Fig4.png">
+<div class="thecap"></div>
+</div>
+
+Now, let's put everything we have discussed into code for general matrix multiplication. Defining grid and block dimensions requires careful analysis now. We must tie the tile sizes and the number of elements each thread computes for compatibility. I decided to go with $$64 \times 8$$ tiles for $$\bf{A}$$ and $$8 \times 64$$ tiles for $$\bf{B}$$. Based on this, in my code, each thread computes 8 elements.
+
+```cuda
+// Coalescing Factor
+#define COARSE_FACTOR 8
+
+// Tiles of A
+#define tiles_A_rows 64
+#define tiles_A_cols 8
+
+// Tiles of B
+#define tiles_B_cols 64
+```
+
+As each thread in a block copies 1 element from global to shared memory, the block is 1D with 512 threads. As each thread is computing 8 elements along the column of $$bf{C}$$, a block is assigned to compute $$64 \times 64$$ tile of $$bf{C}$$. We can use this to define a grid-spanning matrix $$bf{C}$$.
+
+```cuda
+// Kernel execution
+dim3 dim_grid(ceil(C_n_cols/(float)(tiles_B_cols)), ceil(C_n_rows/(float)(tiles_A_rows)));
+dim3 dim_block(tiles_A_rows*tiles_B_cols/COARSE_FACTOR);
+coarse_1d_mat_mul_kernel<<<dim_grid, dim_block>>>(d_A_ptr, d_B_ptr, d_C_ptr, C_n_rows, C_n_cols, A_n_cols);
+```
+
+> As each block has 512 threads and an SM can have a max of 1536 thread, there will be more than 1 block assigned to each SM! This will result in much better latency hiding.
+
+We can now start defining the kernel function. As the block is 1D and threads will get distributed differently (based on what they're doing), we can do the bookkeeping beforehand.
+
+```cuda
+__global__ void coarse_1d_mat_mul_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+  // Details regarding this thread
+  const int by = blockIdx.y;
+  const int bx = blockIdx.x; 
+
+  const int tx = threadIdx.x; 
+
+  // 1D -> 2D while loading A
+  const int A_view_ty = tx / tiles_A_cols;
+  const int A_view_tx = tx % tiles_A_cols;
+
+  // 1D -> 2D while loading B
+  const int B_view_ty = tx / tiles_B_cols;
+  const int B_view_tx = tx % tiles_B_cols;
+
+  // Working on C[row,col]
+  const int row = tiles_A_rows*by + COARSE_FACTOR * (tx/tiles_B_cols);
+  const int col = tiles_B_cols*bx + (tx % tiles_B_cols);
+
+  // .
+  // .
+  // .
+}
+```
+
+The next step is to allocate the shared memory and load tiles of $$\bf{A}$$ and $$\bf{B}$$. In this case, the thread-to-element mapping is very similar to before. The only difference is that we must carefully use the block indices and load the correct tiles into shared memory. 
+
+```cuda
+__global__ void coarse_1d_mat_mul_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+  // Details regarding this thread
+  const int by = blockIdx.y;
+  const int bx = blockIdx.x; 
+
+  const int tx = threadIdx.x; 
+
+  // 1D -> 2D while loading A
+  const int A_view_ty = tx / tiles_A_cols;
+  const int A_view_tx = tx % tiles_A_cols;
+
+  // 1D -> 2D while loading B
+  const int B_view_ty = tx / tiles_B_cols;
+  const int B_view_tx = tx % tiles_B_cols;
+
+  // Working on C[row,col]
+  const int row = tiles_A_rows*by + COARSE_FACTOR * (tx/tiles_B_cols);
+  const int col = tiles_B_cols*bx + (tx % tiles_B_cols);
+
+  // Allocating shared memory
+  __shared__ float sh_A[tiles_A_rows][tiles_A_cols];
+  __shared__ float sh_B[tiles_A_cols][tiles_B_cols];
+
+  // Phases
+  const int phases = ceil((float)A_n_cols/tiles_A_cols);
+
+  // Parallel mat mul
+  float value[COARSE_FACTOR] = {0.0f};
+  for (int phase = 0; phase < phases; phase++)
+  {
+    // Load Tiles into shared memory
+    if ((by*tiles_A_rows + A_view_ty < C_n_rows) && ((phase*tiles_A_cols+A_view_tx) < A_n_cols))
+      sh_A[A_view_ty][A_view_tx] = d_A_ptr[(by*tiles_A_rows + A_view_ty)*A_n_cols + (phase*tiles_A_cols+A_view_tx)];
+    else
+      sh_A[A_view_ty][A_view_tx] = 0.0f;
+    
+    if (((phase*tiles_A_cols + B_view_ty) < A_n_cols) && (bx*tiles_B_cols + B_view_tx < C_n_cols))
+      sh_B[B_view_ty][B_view_tx] = d_B_ptr[(phase*tiles_A_cols + B_view_ty)*C_n_cols + (bx*tiles_B_cols + B_view_tx)];
+    else
+      sh_B[B_view_ty][B_view_tx] = 0.0f;
+    __syncthreads();
+
+    // .
+    // .
+    // .
+  }
+
+  // .
+  // .
+  // .
+}
+```
+
+Once the tiles are in shared memory, we define another loop `k` that puts an element of $$\bf{B}$$ into the thread register. Then the final loop can just perform the standard dot product by retrieving elements of $$\bf{A}$$ individually. After all the calculations, we just store the results in matrix $$\bf{C}$$.
+
+```cuda
+__global__ void coarse_1d_mat_mul_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+  // Details regarding this thread
+  const int by = blockIdx.y;
+  const int bx = blockIdx.x; 
+
+  const int tx = threadIdx.x; 
+
+  // 1D -> 2D while loading A
+  const int A_view_ty = tx / tiles_A_cols;
+  const int A_view_tx = tx % tiles_A_cols;
+
+  // 1D -> 2D while loading B
+  const int B_view_ty = tx / tiles_B_cols;
+  const int B_view_tx = tx % tiles_B_cols;
+
+  // Working on C[row,col]
+  const int row = tiles_A_rows*by + COARSE_FACTOR * (tx/tiles_B_cols);
+  const int col = tiles_B_cols*bx + (tx % tiles_B_cols);
+
+  // Allocating shared memory
+  __shared__ float sh_A[tiles_A_rows][tiles_A_cols];
+  __shared__ float sh_B[tiles_A_cols][tiles_B_cols];
+
+  // Phases
+  const int phases = ceil((float)A_n_cols/tiles_A_cols);
+
+  // Parallel mat mul
+  float value[COARSE_FACTOR] = {0.0f};
+  for (int phase = 0; phase < phases; phase++)
+  {
+    // Load Tiles into shared memory
+    if ((by*tiles_A_rows + A_view_ty < C_n_rows) && ((phase*tiles_A_cols+A_view_tx) < A_n_cols))
+      sh_A[A_view_ty][A_view_tx] = d_A_ptr[(by*tiles_A_rows + A_view_ty)*A_n_cols + (phase*tiles_A_cols+A_view_tx)];
+    else
+      sh_A[A_view_ty][A_view_tx] = 0.0f;
+    
+    if (((phase*tiles_A_cols + B_view_ty) < A_n_cols) && (bx*tiles_B_cols + B_view_tx < C_n_cols))
+      sh_B[B_view_ty][B_view_tx] = d_B_ptr[(phase*tiles_A_cols + B_view_ty)*C_n_cols + (bx*tiles_B_cols + B_view_tx)];
+    else
+      sh_B[B_view_ty][B_view_tx] = 0.0f;
+    __syncthreads();
+
+    for (int k = 0; k < tiles_A_cols; k++)
+    {
+      float B_val_register = sh_B[k][B_view_tx];
+      // Dot product
+      for (int c = 0; c < COARSE_FACTOR; c++)
+        value[c] += sh_A[B_view_ty*COARSE_FACTOR+c][k] * B_val_register;  
+    }
+    __syncthreads();
+  }
+```
+
+> Note that we are performing boundary checks at every step, so this is valid for all matrix sizes!
+
+## Benchmark
+Figure 4 shows the GFLOPS for the shared memory code (where tile size is $$32 \times 32$$) and 1D thread coalescing kernel (where each thread computes 8 elements) against NVIDIA's SGEMM implementation. As we saw earlier, the shared memory version achieved around 12% of what cuBLAS can do for large matrices. With 1D thread coarsening, the kernel is at around 37% of cuBLAS. This gives a big performance jump because we are now spending more time performing calculations (and not accessing memory). So, why not keep up and make each thread compute even more elements by storing elements of both A and B in registers?
+
+<div class="imgcap">
+<img src="/blog_imgs/2024-11-24-xGeMM_Ch4/Fig5.png">
+<div class="thecap">Figure 4: cuBLAS vs Shared Memory vs 1D Thread Coarsening</div>
+</div>
+
 ## References
 - YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
 - Code repository for this blog: [xGeMM](https://github.com/tgautam03/xGeMM)
