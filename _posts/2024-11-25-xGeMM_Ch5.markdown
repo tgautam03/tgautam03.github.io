@@ -7,10 +7,10 @@ date:   2024-11-25 10:00:00
 ---
 
 ## Introduction
-Compiling the code discussed in Chapter 5 with flags `--ptxas-options=-v` outputs that we are using 4096 bytes (4 KB) of shared memory. That's less than the tiled version discussed in Chapter 4 (which used 8 KB of shared memory). With less shared memory and threads per block, the latency tolerance of the kernel is much better. However, we would still like to reduce the global memory accesses by utilizing the shared memory as much as possible. In this post, I will show how we can enable a thread to compute even more elements of the output matrix $$\bf{C}$$ and, in turn, increase the tile sizes of $$\bf{A}$$ and $$\bf{B}$$ (which will decrease the global memory accesses).
+Compiling the code discussed in Chapter 4 with flags `--ptxas-options=-v` outputs that we are using 4096 bytes (4 KB) of shared memory. That's less than the tiled version discussed in Chapter 3 (which used 8 KB of shared memory). With less shared memory and threads per block, the latency tolerance of the kernel is much better. However, we would still like to reduce the global memory accesses by utilizing the shared memory as much as possible. In this post, I will show how we can enable a thread to compute even more elements of the output matrix $$\bf{C}$$ and, in turn, increase the tile sizes of $$\bf{A}$$ and $$\bf{B}$$ (which will decrease the global memory accesses).
 
 ## 2D Thread Coarsening
-The strategy here is very similar to the one discussed in Chapter 5. The difference here is that a thread computes multiple elements along the row and column of the output matrix $$\bf{C}$$. Consider a simple $$4 \times 4$$ matrix multiplication. To solve this in parallel, let's define a $$1 \times 1$$ grid (i.e., 1 block only) and $$1 \times 4$$ block (i.e., 1D block with 4 threads in $$x$$ direction). Even though the block is 1D, we can still distribute the threads to cover the 2D space (see Figure 1).
+The strategy here is very similar to the one discussed in Chapter 4. The difference here is that a thread computes multiple elements along the row and column of the output matrix $$\bf{C}$$. Consider a simple $$4 \times 4$$ matrix multiplication. To solve this in parallel, let's define a $$1 \times 1$$ grid (i.e., 1 block only) and $$1 \times 4$$ block (i.e., 1D block with 4 threads in $$x$$ direction). Even though the block is 1D, we can still distribute the threads to cover the 2D space (see Figure 1).
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-25-xGeMM_Ch5/Fig1.png">
@@ -24,7 +24,7 @@ As before, we load tiles of matrix $$\bf{A}$$ and $$\bf{B}$$ ($$4 \times 2$$ and
 <div class="thecap">Figure 2: Loading tiles into shared memory</div>
 </div>
 
-Once the tiles are in the shared memory, the kernel uses registers and stores the elements of both $$\bf{A}$$ and $$\bf{B}$$. Instead of just a single element (as seen in Chapter 5), a small vector of $$\bf{A}$$ and $$\bf{B}$$ is stored in the thread register. The loop `k` inside each phase is the same as before, and it decides which row and column vector of $$\bf{A}$$ and $$\bf{B}$$, respectively, will be stored in the register. Then, a final two nested loops (call this `cy` and `cx`) calculates the 4 elements of $$\bf{C}$$ assigned to the thread using the required elements of $$\bf{A}$$ and $$\bf{B}$$ (in short, this is just the vector cross product). Figure 3 shows the complete process for Phase 0. 
+Once the tiles are in the shared memory, the kernel uses registers and stores the elements of both $$\bf{A}$$ and $$\bf{B}$$. Instead of just a single element (as seen in Chapter 4), a small vector of $$\bf{A}$$ and $$\bf{B}$$ is stored in the thread register. The loop `k` inside each phase is the same as before, and it decides which row and column vector of $$\bf{A}$$ and $$\bf{B}$$, respectively, will be stored in the register. Then, a final two nested loops (call this `cy` and `cx`) calculates the 4 elements of $$\bf{C}$$ assigned to the thread using the required elements of $$\bf{A}$$ and $$\bf{B}$$ (in short, this is just the vector cross product). Figure 3 shows the complete process for Phase 0. 
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-25-xGeMM_Ch5/Fig3.gif">
