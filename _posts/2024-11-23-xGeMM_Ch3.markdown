@@ -41,22 +41,51 @@ For simplicity, consider a matrix multiplication involving matrices of size 4. T
 <div class="thecap">Figure 3: 4x4 matrix multiplication involving 2x2 blocks and 2x2 grid</div>
 </div>
 
+Let's see how each thread in this block accesses data from the global memory. As a quick recap, the for loop in the kernel function accesses the elements of $$\bf{A}$$ and $$\bf{B}$$, one by one.
 
+```cuda
+for (int k = 0; k < A_n_cols; k++)
+{
+    value += d_A_ptr[row*A_n_cols + k] * d_B_ptr[k*C_n_cols + col];
+}
+```
+
+Figure 4 shows the elements accessed by each thread for values of $$k$$ ranging from 0 to 2.
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig4.png">
 <div class="thecap">Figure 4: Threads and global memory accesses</div>
 </div>
 
+Analyzing these memory accesses, we see they are quite inefficient! Just look at $$k=0$$; $$\text{Thread}(0,0)$$ and $$\text{Thread}(0,1)$$ both access the same element $$\bf{A}(0,0)$$ from global memory. The same can be said for $$\text{Thread}(0,0)$$ and $$\text{Thread}(1,0)$$, where these two are again accessing $$\bf{B}(0,0)$$ individually from the global memory. These multiple global memory accesses are costly, and it would be better if we access these elements once, store them in shared memory, and then all threads in a block can use them whenever necessary!
+
+The strategy here is to divide the matrices $$\bf{A}$$ and $$\bf{B}$$ into tiles of the same shape as the thread block. This is just to keep the code simple. Then, an outer loop (say `phase`) loops over the tiles (one by one). Inside each `phase`, each thread in the block loads one element from global to shared memory. Once all the elements are loaded in the shared memory, an inner loop (say `k_phase`) performs the dot product (just like $$k$$ in the last kernel function). The catch is that all elements accessed by `k_phase` are in shared memory, so there's very little cost associated with these memory accesses.
+
+For $$4 \times 4$$ matrices, we will have two phases, and Figure 5 shows tiles loading into shared memory in each phase. Each thread is assigned one element, and all threads in a block load these elements into shared memory (in parallel). Once the elements are in the shared memory, matrix multiplication is performed using the data in the shared memory. Each iteration accumulates the result, and the final result can be stored back in the output matrix.
+
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig5.gif">
 <div class="thecap">Figure 5: Loading tiles into shared memory and performing matrix multiplication in multiple phases</div>
 </div>
 
+Figure 6 shows the elements accessed by each thread for different values of phase (keeping the data in Figure 6 consistent with Figure 4).
+
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig6.png">
 <div class="thecap">Figure 6: Threads and global memory accesses using shared memory</div>
 </div>
+
+Each thread previously was accessing 6 elements from global memory. Now that has been reduced to 4 or 3 (almost halved). This might not look significant, but remember that we will use this code to perform large matrix multiplications (and not $$4 \times 4$$). It is worth noting that if the tile size is $$k \times k$$ (in the case discussed above, it was $$2 \times 2$$), the global memory traffic will be reduced to $$1/k$$. So, the focus should be to keep the tile size as large as possible (ensuring that it fits in the limited shared memory). 
+
+The tiling works because the matrix multiplication algorithm supports it! Algorithmically, we are just splitting one large loop (`k`) into two smaller loops(`phase` and `k_phase`). For example, consider the calculations for computing the output element $$\bf{C}(0,0)$$:
+
+**Original Version**
+
+$$C[0,0]= \overbrace{A[0,0] \cdot B[0,0]}^{k=0} + \overbrace{A[0,1] \cdot B[1,0]}^{k=1} + \overbrace{A[0,2] \cdot B[2,0]}^{k=2} + \overbrace{A[0,3] \cdot B[3,0]}^{k=3}$$
+
+**Tiled Version**
+
+$$C[0,0]= \overbrace{\overbrace{A[0,0] \cdot B[0,0]}^{k_{phase}=0} + \overbrace{A[0,1] \cdot B[1,0]}^{k_{phase}=1}}^{phase=0} + \overbrace{\overbrace{A[0,2] \cdot B[2,0]}^{k_{phase}=0} + \overbrace{A[0,3] \cdot B[3,0]}^{k_{phase}=1}}^{phase=1}$$
 
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig7.png">
