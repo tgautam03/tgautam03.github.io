@@ -87,11 +87,235 @@ $$C[0,0]= \overbrace{A[0,0] \cdot B[0,0]}^{k=0} + \overbrace{A[0,1] \cdot B[1,0]
 
 $$C[0,0]= \overbrace{\overbrace{A[0,0] \cdot B[0,0]}^{k_{phase}=0} + \overbrace{A[0,1] \cdot B[1,0]}^{k_{phase}=1}}^{phase=0} + \overbrace{\overbrace{A[0,2] \cdot B[2,0]}^{k_{phase}=0} + \overbrace{A[0,3] \cdot B[3,0]}^{k_{phase}=1}}^{phase=1}$$
 
+Writing a kernel function that supports tiling can be a little tricky. However, I will explain everything by dividing the whole process into 8 simple steps:
+
+1. The first thing we need to do is make sure that the block's dimensions are the same as the tile size. This is just to keep the code simple.
+
+```cuda
+// Ensure that TILE_WIDTH = BLOCK_SIZE
+assert(TILE_WIDTH == blockDim.x);
+assert(TILE_WIDTH == blockDim.y);
+```
+
+2. Let's store the block and thread indices in variables and find out the coordinate of the element of $$\bf{C}$$ that the select thread will work on. Then, we can also allocate shared memory for $$\bf{A}$$ and $$\bf{B}$$. 
+
+> Remember that automatic variables are private to threads (hence a separate copy for each thread).
+
+```cuda
+// Details regarding this thread
+const int by = blockIdx.y;
+const int bx = blockIdx.x; 
+
+const int ty = threadIdx.y;
+const int tx = threadIdx.x; 
+
+// Working on C[row,col]
+const int row = TILE_WIDTH*by + ty;
+const int col = TILE_WIDTH*bx + tx;
+
+// Allocating shared memory
+__shared__ float sh_A[TILE_WIDTH][TILE_WIDTH];
+__shared__ float sh_B[TILE_WIDTH][TILE_WIDTH];
+```
+
+3. Next, we divide matrices $$\bf{A}$$ and $$\bf{B}$$ into multiple tiles (or phases) and loop over the tiles one by one.
+
+```cuda
+// Phases
+const int phases = ceil((float)A_n_cols/TILE_WIDTH);
+
+// Parallel mat mul
+float value = 0;
+for (int phase = 0; phase < phases; phase++)
+{
+    // .
+    // .
+    // .
+}
+```
+
+4. As the block size is the same as the tile width, each thread is responsible for copying an element from matrices $$\bf{A}$$ and $$\bf{B}$$. Figure 5 illustrates which thread will copy which element, but here are the key points:
+    - For an element of matrix $$\bf{A}$$, the row index is the same as the global index of the thread in the $$y$$ direction (i.e., `row`), and the column index is decoded by first deciding which tile number it is (i.e. `phase*TILE_WIDTH`), and then the local thread index in the $$x$$ direction (i.e. `tx`) is added to it (remember that the $$x$$ index of the thread maps to the columns of $$\bf{A}$$).
+    - For an element of matrix $$\bf{B}$$, the row index is decoded by first deciding which tile number it is (i.e. `phase*TILE_WIDTH`), and then the local thread index in the $$y$$ direction (i.e. `ty`) is added to it (remember that the $$y$$ index of the thread maps to the rows of $$\bf{B}$$), and the column index is the same as the global index of the thread in the $$x$$ direction (i.e., `col`).
+    - Remember that if a thread does not load a value into shared memory, then that spot in the shared memory must be set to 0 to avoid corruption of the final results.
+
+```cuda
+// Parallel mat mul
+float value = 0;
+for (int phase = 0; phase < phases; phase++)
+{
+    // Load Tiles into shared memory
+    if ((row < C_n_rows) && ((phase*TILE_WIDTH+tx) < A_n_cols))
+      sh_A[ty][tx] = d_A_ptr[(row)*A_n_cols + (phase*TILE_WIDTH+tx)];
+    else
+      sh_A[ty][tx] = 0.0f;
+
+    if (((phase*TILE_WIDTH + ty) < A_n_cols) && (col < C_n_cols))
+      sh_B[ty][tx] = d_B_ptr[(phase*TILE_WIDTH + ty)*C_n_cols + (col)];
+    else
+      sh_B[ty][tx] = 0.0f;
+    
+    // .
+    // .
+    // .
+}
+```
+
+5. The whole point of tiling is that all threads in a block can access all elements (necessary) for their computations. As data copying into shared memory is done in parallel by multiple threads (and it's coalesced), we must ensure the complete tile is loaded before moving forward! This is done using `__syncthreads()` which holds the code execution (at this point) until all threads have reached there. 
+
+```cuda
+// Parallel mat mul
+float value = 0;
+for (int phase = 0; phase < phases; phase++)
+{
+    // Load Tiles into shared memory
+    if ((row < C_n_rows) && ((phase*TILE_WIDTH+tx) < A_n_cols))
+      sh_A[ty][tx] = d_A_ptr[(row)*A_n_cols + (phase*TILE_WIDTH+tx)];
+    else
+      sh_A[ty][tx] = 0.0f;
+
+    if (((phase*TILE_WIDTH + ty) < A_n_cols) && (col < C_n_cols))
+      sh_B[ty][tx] = d_B_ptr[(phase*TILE_WIDTH + ty)*C_n_cols + (col)];
+    else
+      sh_B[ty][tx] = 0.0f;
+    
+    // Wait for all threads to load elements
+    __syncthreads();
+
+    // .
+    // .
+    // .
+}
+```
+
+6. Finally, we can perform the dot product using the data loaded into the shared memory.
+
+```cuda
+// Parallel mat mul
+float value = 0;
+for (int phase = 0; phase < phases; phase++)
+{
+    // Load Tiles into shared memory
+    if ((row < C_n_rows) && ((phase*TILE_WIDTH+tx) < A_n_cols))
+      sh_A[ty][tx] = d_A_ptr[(row)*A_n_cols + (phase*TILE_WIDTH+tx)];
+    else
+      sh_A[ty][tx] = 0.0f;
+
+    if (((phase*TILE_WIDTH + ty) < A_n_cols) && (col < C_n_cols))
+      sh_B[ty][tx] = d_B_ptr[(phase*TILE_WIDTH + ty)*C_n_cols + (col)];
+    else
+      sh_B[ty][tx] = 0.0f;
+    __syncthreads();
+
+    // Dot product
+    for (int k_phase = 0; k_phase < TILE_WIDTH; k_phase++)
+        value += sh_A[ty][k_phase] * sh_B[k_phase][tx];
+    
+    // .
+    // .
+    // .
+}
+```
+
+7. As the loop moves to the next iteration, it starts by loading the shared memory with new tiles. For this reason, we must again ensure that all threads have completed their dot product evaluation and avoid data corruption!
+
+```cuda
+// Parallel mat mul
+float value = 0;
+for (int phase = 0; phase < phases; phase++)
+{
+    // Load Tiles into shared memory
+    if ((row < C_n_rows) && ((phase*TILE_WIDTH+tx) < A_n_cols))
+      sh_A[ty][tx] = d_A_ptr[(row)*A_n_cols + (phase*TILE_WIDTH+tx)];
+    else
+      sh_A[ty][tx] = 0.0f;
+
+    if (((phase*TILE_WIDTH + ty) < A_n_cols) && (col < C_n_cols))
+      sh_B[ty][tx] = d_B_ptr[(phase*TILE_WIDTH + ty)*C_n_cols + (col)];
+    else
+      sh_B[ty][tx] = 0.0f;
+    __syncthreads();
+
+    // Dot product
+    for (int k_phase = 0; k_phase < TILE_WIDTH; k_phase++)
+        value += sh_A[ty][k_phase] * sh_B[k_phase][tx];
+    
+    // Wait for all threads to finish dot product
+    __syncthreads();
+}
+```
+
+> You might be thinking, how can this tiled version be better because there are two loops? If you look carefully, the two loops are significantly smaller than the one big loop in the standard matrix multiplication kernel. Essentially, we are breaking a single long-running loop into smaller phases (that run faster). This technique is known as strip mining and is not unique to GPU programming. 
+
+8. The last step is to store the calculated value in matrix $$\bf{C}$$. We must ensure that the threads return the results in the valid memory locations.
+
+```cuda
+// Assigning calculated value
+if ((row < C_n_rows) && (col < C_n_cols))
+    d_C_ptr[(row)*C_n_cols + (col)] =  1*value + 0*d_C_ptr[(row)*C_n_cols + (col)];
+```
+
+Putting all 8 steps together, we have a parallel implementation of tiled matrix multiplication.
+
+```cuda
+__global__ void tiled_mat_mul_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr, int C_n_rows, int C_n_cols, int A_n_cols)
+{
+    // Ensure that TILE_WIDTH = BLOCK_SIZE
+    assert(TILE_WIDTH == blockDim.x);
+    assert(TILE_WIDTH == blockDim.y);
+    
+    // Details regarding this thread
+    const int by = blockIdx.y;
+    const int bx = blockIdx.x; 
+
+    const int ty = threadIdx.y;
+    const int tx = threadIdx.x; 
+
+    // Working on C[row,col]
+    const int row = TILE_WIDTH*by + ty;
+    const int col = TILE_WIDTH*bx + tx;
+
+    // Allocating shared memory
+    __shared__ float sh_A[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float sh_B[TILE_WIDTH][TILE_WIDTH];
+
+    // Phases
+    const int phases = ceil((float)A_n_cols/TILE_WIDTH);
+
+    // Parallel mat mul
+    float value = 0;
+    for (int phase = 0; phase < phases; phase++)
+    {
+        // Load Tiles into shared memory
+        if ((row < C_n_rows) && ((phase*TILE_WIDTH+tx) < A_n_cols))
+          sh_A[ty][tx] = d_A_ptr[(row)*A_n_cols + (phase*TILE_WIDTH+tx)];
+        else
+          sh_A[ty][tx] = 0.0f;
+
+        if (((phase*TILE_WIDTH + ty) < A_n_cols) && (col < C_n_cols))
+          sh_B[ty][tx] = d_B_ptr[(phase*TILE_WIDTH + ty)*C_n_cols + (col)];
+        else
+          sh_B[ty][tx] = 0.0f;
+        __syncthreads();
+
+        // Dot product
+        for (int k_phase = 0; k_phase < TILE_WIDTH; k_phase++)
+            value += sh_A[ty][k_phase] * sh_B[k_phase][tx];
+        __syncthreads();
+    }
+    // Assigning calculated value
+    if ((row < C_n_rows) && (col < C_n_cols))
+        d_C_ptr[(row)*C_n_cols + (col)] =  1*value + 0*d_C_ptr[(row)*C_n_cols + (col)];
+}
+```
+
+## Benchmark
+Figure 7 shows the GFLOPS for the coalesced and shared memory code (where tile size is $$32 \times 32$$) against NVIDIA's SGEMM implementation. As we saw earlier, the coalesced version achieved around 9% of what cuBLAS can do for large matrices. With shared memory accesses, the kernel is at around 12% of cuBLAS. This did not result in a big performance jump. Again, the GFLOPS trend is similar to the coalesced version of the kernel function. Our code is almost on a level with cuBLAS for smaller matrices (i.e., $$128 \times 128$$), but the gap widens as the matrix size increases. We will have to analyze this further to understand why this is happening.
+
 <div class="imgcap">
 <img src="/blog_imgs/2024-11-23-xGeMM_Ch3/Fig7.png">
 <div class="thecap">Figure 7: cuBLAS vs Coaleased vs Shared Memory</div>
 </div>
-
 
 ## References
 - YouTube video for this blog: [How to program a GPU](https://www.youtube.com/watch?v=GetaI7KhbzM)
